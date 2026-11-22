@@ -48,7 +48,7 @@ enum { E_MET, E_BATTON, E_BOSS };
 /* ---------- tipos ---------- */
 typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives; } Player;
 typedef struct { int active, own, dmg; float x, y, vx, vy; } Bullet;   /* own: 0 jogador, 1 inimigo */
-typedef struct { int active, type, hp, dir, t, st, w, h, flash; float x, y, vx, vy, by; } Enemy;
+typedef struct { int active, type, hp, dir, t, st, w, h, flash, ground; float x, y, vx, vy, by; } Enemy;
 typedef struct { int active; float x, y, vy; } Item;
 
 /* ---------- estado global ---------- */
