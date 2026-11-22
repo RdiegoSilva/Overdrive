@@ -1,5 +1,5 @@
 /*
- * REIS BOT - plataforma de acao estilo "Mega Man" para PS2 (homebrew)
+ * REIS BOT - plataforma de acao 2D para PS2 (homebrew)
  * PS2SDK + gsKit. Tudo desenhado com retangulos (sem texturas/audio).
  *
  * Controles:
@@ -680,8 +680,10 @@ static void draw_tiles(void)
 
 static void draw_player(void)
 {
-    u64 body = RGB(40, 110, 230), light = RGB(120, 180, 255), dark = RGB(20, 60, 160);
-    u64 line = RGB(8, 16, 56), skin = RGB(250, 214, 176), cyan = RGB(120, 240, 250);
+    u64 body = RGB(235, 110, 40), light = RGB(255, 165, 95), dark = RGB(170, 70, 20);     /* moletom */
+    u64 line = RGB(40, 22, 16), skin = RGB(245, 200, 160), glove = RGB(70, 205, 235);
+    u64 jeans = RGB(50, 75, 150), jeans2 = RGB(32, 50, 110), hair = RGB(60, 36, 24);
+    u64 cap = RGB(210, 45, 55), shoe = RGB(245, 245, 245);
     float x = p.x, y = p.y;
     int moving = (p.vx != 0 && p.ground);
     int step = (frame / 5) % 2;
@@ -689,38 +691,48 @@ static void draw_player(void)
     int lxa = 2, lxb = 6, ha = 6;
 
     if (p.inv > 0 && (frame / 3) % 2) return;
-    if (p.charge >= CHARGE_FRAMES && (frame / 3) % 2) { body = RGB(250, 250, 120); light = RGB(255, 255, 230); }
-    else if (p.charge > 20 && (frame / 6) % 2) { body = RGB(120, 190, 255); light = RGB(210, 235, 255); }
+    if (p.charge >= CHARGE_FRAMES && (frame / 3) % 2) { body = RGB(255, 225, 90); light = RGB(255, 250, 200); }
+    else if (p.charge > 20 && (frame / 6) % 2) { body = RGB(255, 150, 80); light = RGB(255, 205, 155); }
 
     if (!p.ground) { lxa = 1; lxb = 7; ha = 4; }
     else if (moving) { lxa = step ? 3 : 0; lxb = step ? 5 : 8; }
 
-    PM(lxa, 14, 4, ha, dark);                                    /* pernas e botas */
-    PM(lxb, 14, 4, ha, dark);
-    PM(lxa, 12 + ha, 5, 2, line);
-    PM(lxb, 12 + ha, 5, 2, line);
+    PM(lxa, 14, 4, ha, jeans);                                   /* pernas (jeans) e tenis */
+    PM(lxb, 14, 4, ha, jeans2);
+    PM(lxa, 11 + ha, 5, 3, shoe);
+    PM(lxb, 11 + ha, 5, 3, shoe);
+    PM(lxa, 13 + ha, 5, 1, line);
+    PM(lxb, 13 + ha, 5, 1, line);
 
-    PM(-1, 7 + bob, 14, 9, line);                                /* tronco */
+    PM(-1, 7 + bob, 14, 9, line);                                /* moletom */
     PM(0, 8 + bob, 12, 7, body);
-    PM(2, 9 + bob, 5, 2, light);
+    PM(2, 9 + bob, 4, 2, light);
     PM(0, 14 + bob, 12, 1, dark);
+    PM(3, 12 + bob, 6, 2, dark);                                 /* bolso */
+    PM(1, 7 + bob, 10, 2, dark);                                 /* gola do capuz */
+    PM(5, 8 + bob, 1, 3, RGB(245, 245, 245));                    /* cordoes */
+    PM(7, 8 + bob, 1, 3, RGB(245, 245, 245));
 
-    PM(0, -1 + bob, 12, 10, line);                               /* capacete */
-    PM(1, 0 + bob, 10, 8, body);
-    PM(2, 1 + bob, 4, 2, light);
-    PM(3, -2 + bob, 5, 2, RGB(250, 220, 60));
-    PM(5, 3 + bob, 6, 5, skin);                                  /* rosto */
-    PM(8, 4 + bob, 2, 3, line);
+    PM(0, -2 + bob, 12, 11, line);                               /* cabeca */
+    PM(4, 2 + bob, 7, 6, skin);                                  /* rosto */
+    PM(1, 3 + bob, 4, 5, hair);                                  /* cabelo de tras */
+    PM(1, -1 + bob, 10, 4, cap);                                 /* bone */
+    PM(8, 2 + bob, 5, 1, RGB(150, 25, 35));                      /* aba do bone */
+    PM(4, 0 + bob, 3, 1, RGB(255, 255, 255));                    /* logo do bone */
+    PM(8, 4 + bob, 1, 2, line);                                  /* olho */
+    PM(8, 7 + bob, 2, 1, RGB(190, 95, 85));                      /* sorriso */
 
-    PM(8, 9 + bob, 9, 6, line);                                  /* canhao */
-    PM(9, 10 + bob, 7, 4, body);
-    PM(9, 10 + bob, 5, 1, light);
-    PM(14, 10 + bob, 2, 4, cyan);
+    PM(6, 9 + bob, 7, 5, line);                                  /* braco com a luva */
+    PM(7, 10 + bob, 6, 3, body);
+    PM(7, 10 + bob, 4, 1, light);
+    PM(12, 9 + bob, 5, 5, line);
+    PM(12, 10 + bob, 3, 3, glove);
+    PM(15, 10 + bob, 1, 3, RGB(255, 255, 255));
 
-    if (p.charge > 20) {                                         /* brilho do tiro carregado */
+    if (p.charge > 20) {                                         /* brilho da luva carregando */
         int full = (p.charge >= CHARGE_FRAMES);
         int sz = full ? 6 : 2 + (p.charge - 20) / 12;
-        PM(17, 12 + bob - sz / 2, sz, sz, (full && (frame / 2) % 2) ? RGB(255, 255, 255) : cyan);
+        PM(17, 12 + bob - sz / 2, sz, sz, (full && (frame / 2) % 2) ? RGB(255, 255, 255) : glove);
     }
 }
 #undef PM
@@ -862,7 +874,7 @@ static void draw(void)
         draw_background(frame * 0.7f);
         draw_floor_strip();
         text_center(46, "REIS BOT", 6, RGB(120, 230, 255));
-        text_center(90, "ESTILO MEGA MAN PARA PS2", 2, RGB(255, 255, 255));
+        text_center(90, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
         if ((frame / 30) % 2) text_center(140, "APERTE START", 3, RGB(250, 240, 130));
         text_center(172, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
     } else if (state == ST_OVER) {

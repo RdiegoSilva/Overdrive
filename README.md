@@ -1,6 +1,6 @@
 # REIS BOT
 
-Plataforma de ação estilo Mega Man para PS2 (homebrew, PS2SDK + gsKit, em C).
+Plataforma de ação 2D para PS2, com um garoto adolescente de boné e moletom como herói (homebrew, PS2SDK + gsKit, em C).
 Sem texturas nem áudio: tudo é desenhado com retângulos, então não precisa de assets.
 
 ## Compilar
