@@ -10,10 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     container: ps2dev/ps2dev:latest
     steps:
+      - name: Instalar ferramentas de build
+        run: apk add --no-cache make bash git
+
       - uses: actions/checkout@v4
 
       - name: Compilar
-        run: make -j"$(nproc)"
+        run: |
+          export PATH="$PATH:$PS2DEV/bin:$PS2DEV/ee/bin:$PS2DEV/iop/bin:$PS2SDK/bin"
+          make -j"$(nproc)"
 
       - name: Publicar o ELF
         uses: actions/upload-artifact@v4
