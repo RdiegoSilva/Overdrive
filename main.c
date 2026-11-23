@@ -2128,7 +2128,7 @@ static void menu_item(float y, const char *str, int sc, int sel)
     }
 }
 
-static void draw_bar(float x, float y, int v, int sel)
+static void draw_vol_bar(float x, float y, int v, int sel)
 {
     int k;
     for (k = 0; k < 10; k++)
@@ -2169,9 +2169,9 @@ static void draw_menu(void)
             u64 c = sel ? RGB(250, 240, 130) : RGB(255, 255, 255);
             text(52, y, optName[i], 2, c);
             if (sel && (frame / 12) % 2 == 0) { ui(40, y + 3, 2, 4, c); ui(42, y + 1, 2, 8, c); }
-            if (i == 0) draw_bar(160, y + 1, optVol, sel);
-            else if (i == 1) draw_bar(160, y + 1, optMus, sel);
-            else if (i == 2) draw_bar(160, y + 1, optSfx, sel);
+            if (i == 0) draw_vol_bar(160, y + 1, optVol, sel);
+            else if (i == 1) draw_vol_bar(160, y + 1, optMus, sel);
+            else if (i == 2) draw_vol_bar(160, y + 1, optSfx, sel);
             else if (i == 3) text(160, y, optShake ? "LIGADO" : "DESLIGADO", 2, c);
             else if (i == 4) text(160, y, optVig ? "LIGADO" : "DESLIGADO", 2, c);
         }
