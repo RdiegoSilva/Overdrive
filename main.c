@@ -14,6 +14,7 @@
 #include <loadfile.h>
 #include <iopcontrol.h>
 #include <libpad.h>
+#include <libmc.h>
 #include <gsKit.h>
 #include <dmaKit.h>
 #include <math.h>
@@ -88,6 +89,8 @@ static int pwIdx[5] = {0, 0, 0, 0, 0}, pwPos = 0, pwErr = 0;   /* tela de senha 
 static int optShake = 1, optVig = 1;                /* tremor de tela / vinheta ligados */
 static int paused = 0, ready = 0, frame = 0, score = 0;
 static int bossActive = 0, bossDeath = 0, shake = 0;
+static int partsDone = 0;                    /* partes concluidas (0 = nenhuma) */
+static int saveStatus = 0, menuMsg = 0;     /* saveStatus: 0 nada, 1 salvo, 2 falhou; menuMsg: aviso no menu */
 static int hasDash = 0, dashMsg = 0;        /* dash: ganho ao derrotar o Capitao Lobo, permanente */
 static int miniState = 0, wallTip = 0;      /* mini-chefe: 0 nao comecou, 1 lutando, 2 derrotado */
 static float miniCam = 0;
@@ -430,7 +433,7 @@ static void respawn_player(void)
 
 static void new_game(void)
 {
-    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0; hasDash = 0; dashMsg = 0;
+    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0; hasDash = 0; dashMsg = 0; partsDone = 0; saveStatus = 0;
     respawn_player();
     state = ST_INTRO; introT = 150; paused = 0;
 }
@@ -768,6 +771,97 @@ static const Line story[] = {
 };
 #define NSTORY ((int)(sizeof(story) / sizeof(story[0])))
 
+static int clamp10_(int v) { return v < 0 ? 0 : (v > 10 ? 10 : v); }
+
+/* ---------- save no memory card (slot 1) ---------- */
+#ifndef MC_RD
+#define MC_RD 0x0001
+#define MC_WR 0x0002
+#define MC_CREAT 0x0200
+#define MC_TRUNC 0x0400
+#endif
+#define SAVE_MAGIC 0x544F4252u              /* "RBOT" */
+typedef struct {
+    unsigned magic;
+    int ver, parts, dash, lives, score;
+    int vol, mus, sfx, shake, vig;
+    unsigned sum;
+} SaveData;
+static SaveData sd __attribute__((aligned(64)));   /* ultimo save conhecido (progresso + opcoes) */
+static int mcReady = 0;
+
+static unsigned sd_sum(const SaveData *d)
+{
+    const unsigned char *b = (const unsigned char *)d;
+    unsigned a = 0x9E37u;
+    unsigned i;
+    for (i = 0; i < sizeof(SaveData) - sizeof(unsigned); i++) a = a * 31u + b[i];
+    return a;
+}
+
+static void mc_start(void)
+{
+    SifLoadModule("rom0:MCMAN", 0, NULL);
+    SifLoadModule("rom0:MCSERV", 0, NULL);
+    mcReady = (mcInit(MC_TYPE_MC) >= 0);
+}
+
+static int mc_card_ok(void)
+{
+    int type, free_, fmt, r, k;
+    if (!mcReady) return 0;
+    for (k = 0; k < 2; k++) {                   /* a 1a consulta so detecta o cartao */
+        mcGetInfo(0, 0, &type, &free_, &fmt);
+        mcSync(0, NULL, &r);
+    }
+    return r >= -1 && type == 2;               /* 2 = cartao de PS2 */
+}
+
+static int write_save(void)
+{
+    int r, fd, ok;
+    if (!mc_card_ok()) return 0;
+    mcMkDir(0, 0, "REISBOT"); mcSync(0, NULL, &r);          /* ja existir nao e erro */
+    mcOpen(0, 0, "/REISBOT/save.bin", MC_WR | MC_CREAT | MC_TRUNC);
+    mcSync(0, NULL, &fd);
+    if (fd < 0) return 0;
+    sd.magic = SAVE_MAGIC; sd.ver = 1;
+    sd.vol = optVol; sd.mus = optMus; sd.sfx = optSfx; sd.shake = optShake; sd.vig = optVig;
+    sd.sum = sd_sum(&sd);
+    mcWrite(fd, &sd, sizeof(SaveData));
+    mcSync(0, NULL, &r);
+    ok = (r == (int)sizeof(SaveData));
+    mcClose(fd); mcSync(0, NULL, &r);
+    return ok;
+}
+
+static int read_save(void)                 /* 1 se leu um save valido (e aplica as opcoes) */
+{
+    static SaveData tmp __attribute__((aligned(64)));
+    int r, fd;
+    if (!mc_card_ok()) return 0;
+    mcOpen(0, 0, "/REISBOT/save.bin", MC_RD);
+    mcSync(0, NULL, &fd);
+    if (fd < 0) return 0;
+    mcRead(fd, &tmp, sizeof(SaveData));
+    mcSync(0, NULL, &r);
+    mcClose(fd); mcSync(0, NULL, &fd);
+    if (r != (int)sizeof(SaveData) || tmp.magic != SAVE_MAGIC || tmp.ver != 1 || tmp.sum != sd_sum(&tmp)) return 0;
+    sd = tmp;
+    optVol = clamp10_(sd.vol); optMus = clamp10_(sd.mus); optSfx = clamp10_(sd.sfx);
+    optShake = sd.shake ? 1 : 0; optVig = sd.vig ? 1 : 0;
+    return 1;
+}
+
+/* fim de uma parte: mostra senha na tela de vitoria e salva o progresso no memory card */
+static void finish_part(void)
+{
+    partsDone = 1;
+    state = ST_WIN;
+    sd.parts = partsDone; sd.dash = hasDash; sd.lives = (p.lives < 1) ? 3 : p.lives; sd.score = score;
+    saveStatus = write_save() ? 1 : 2;
+}
+
 static void start_cut(void)
 {
     state = ST_CUT; cutPhase = 0; cutT = 0; cutLine = 0; cutBossY = -70;
@@ -798,7 +892,7 @@ static void update_cut(unsigned pressed)
         cutBossY -= 1.0f + cutT * 0.08f;
         if (cutT % 6 == 0) burst(KING_X + 18, cutBossY + 56, 4, 255, 200, 120, 1.5f);
         if (cutT < 30) shake = 6;
-        if (cutBossY < -80) state = ST_WIN;
+        if (cutBossY < -80) finish_part();
     }
 }
 
@@ -835,27 +929,29 @@ static int cp_index(void)
 static unsigned pw_hash(unsigned x) { return (x * 2654435761u + 0x1234567u) & 0x1FFFFFFu; }
 static unsigned pw_chk(unsigned d) { return (d * 73u + 41u) & 0xFFu; }
 
-static void pw_make(char *out, int cp, int dash, int lives)
+static void pw_make(char *out, int cp, int dash, int lives, int parts)
 {
     unsigned d, h;
     int i;
     if (lives < 1) lives = 3;
     if (lives > 8) lives = 8;
-    d = (unsigned)cp | ((unsigned)(dash ? 1 : 0) << 4) | ((unsigned)(lives - 1) << 5);
+    if (parts < 0) parts = 0;
+    if (parts > 7) parts = 7;
+    d = (unsigned)cp | ((unsigned)(dash ? 1 : 0) << 4) | ((unsigned)(lives - 1) << 5) | ((unsigned)parts << 8);
     h = pw_hash((d << 8) | pw_chk(d));
     for (i = 0; i < PW_LEN; i++) out[PW_LEN - 1 - i] = pwChars[(h >> (5 * i)) & 31];
     out[PW_LEN] = 0;
 }
 
-static int pw_decode(const int *idx, int *cp, int *dash, int *lives)
+static int pw_decode(const int *idx, int *cp, int *dash, int *lives, int *parts)
 {
     unsigned h = 0, d;
     int i;
     for (i = 0; i < PW_LEN; i++) h = (h << 5) | (unsigned)idx[i];
-    for (d = 0; d < 256; d++) {
+    for (d = 0; d < 2048; d++) {
         if ((d & 15) > 9) continue;
         if (pw_hash((d << 8) | pw_chk(d)) == h) {
-            *cp = (int)(d & 15); *dash = (int)((d >> 4) & 1); *lives = (int)(d >> 5) + 1;
+            *cp = (int)(d & 15); *dash = (int)((d >> 4) & 1); *lives = (int)((d >> 5) & 7) + 1; *parts = (int)(d >> 8);
             return 1;
         }
     }
@@ -864,42 +960,46 @@ static int pw_decode(const int *idx, int *cp, int *dash, int *lives)
 
 static void current_pw(char *out)
 {
-    pw_make(out, cp_index(), hasDash, p.lives);
+    pw_make(out, (state == ST_WIN) ? 0 : cp_index(), hasDash, p.lives, partsDone);
 }
 
-static void load_password(int cp, int dash, int lives)
+static void load_password(int cp, int dash, int lives, int parts)
 {
     new_game();
     hasDash = dash; dashMsg = 0;
     cpx = (float)(cpCols[cp] * TS);
     p.lives = lives;
     respawn_player();
+    if (parts > 0) {                         /* parte concluida: vai para a tela de fim de parte */
+        partsDone = parts; saveStatus = 0;
+        state = ST_WIN;
+    }
 }
 
 /* ---------- menu do titulo ---------- */
 #define OPT_ITEMS 6
-static int clamp10(int v) { return v < 0 ? 0 : (v > 10 ? 10 : v); }
 
 static void update_menu(unsigned pressed)
 {
     int ok = (pressed & (PAD_CROSS | PAD_START)) != 0;
     int back = (pressed & PAD_CIRCLE) != 0;
-    int n = (menuScr == MN_MAIN) ? 4 : OPT_ITEMS;
+    int n = (menuScr == MN_MAIN) ? 5 : OPT_ITEMS;
 
     if (pwErr > 0) pwErr--;
+    if (menuMsg > 0) menuMsg--;
     if (menuScr == MN_CRED) {
-        if (ok || back) { menuScr = MN_MAIN; menuSel = 3; }
+        if (ok || back) { menuScr = MN_MAIN; menuSel = 4; }
         return;
     }
     if (menuScr == MN_PASS) {
-        if (back) { menuScr = MN_MAIN; menuSel = 1; return; }
+        if (back) { menuScr = MN_MAIN; menuSel = 2; return; }
         if (pressed & PAD_LEFT) pwPos = (pwPos + PW_LEN - 1) % PW_LEN;
         if (pressed & PAD_RIGHT) pwPos = (pwPos + 1) % PW_LEN;
         if (pressed & PAD_UP) pwIdx[pwPos] = (pwIdx[pwPos] + 1) % 32;
         if (pressed & PAD_DOWN) pwIdx[pwPos] = (pwIdx[pwPos] + 31) % 32;
         if (ok) {
-            int cp, dash, lives;
-            if (pw_decode(pwIdx, &cp, &dash, &lives)) load_password(cp, dash, lives);
+            int cp, dash, lives, parts;
+            if (pw_decode(pwIdx, &cp, &dash, &lives, &parts)) load_password(cp, dash, lives, parts);
             else pwErr = 90;
         }
         return;
@@ -910,15 +1010,19 @@ static void update_menu(unsigned pressed)
     if (menuScr == MN_MAIN) {
         if (!ok) return;
         if (menuSel == 0) new_game();
-        else if (menuSel == 1) { menuScr = MN_PASS; pwPos = 0; pwErr = 0; }
-        else if (menuSel == 2) { menuScr = MN_OPT; menuSel = 0; }
+        else if (menuSel == 1) {                                   /* continuar do save do memory card */
+            if (sd.parts > 0) { load_password(0, sd.dash, sd.lives, sd.parts); score = sd.score; }
+            else menuMsg = 90;
+        }
+        else if (menuSel == 2) { menuScr = MN_PASS; pwPos = 0; pwErr = 0; }
+        else if (menuSel == 3) { menuScr = MN_OPT; menuSel = 0; }
         else { menuScr = MN_CRED; }
     } else {
         int d = ((pressed & PAD_RIGHT) ? 1 : 0) - ((pressed & PAD_LEFT) ? 1 : 0);
-        if (back || (ok && menuSel == OPT_ITEMS - 1)) { menuScr = MN_MAIN; menuSel = 2; return; }
-        if (menuSel == 0) optVol = clamp10(optVol + d);
-        else if (menuSel == 1) optMus = clamp10(optMus + d);
-        else if (menuSel == 2) optSfx = clamp10(optSfx + d);
+        if (back || (ok && menuSel == OPT_ITEMS - 1)) { menuScr = MN_MAIN; menuSel = 3; write_save(); return; }   /* grava as opcoes */
+        if (menuSel == 0) optVol = clamp10_(optVol + d);
+        else if (menuSel == 1) optMus = clamp10_(optMus + d);
+        else if (menuSel == 2) optSfx = clamp10_(optSfx + d);
         else if (menuSel == 3 && (d || ok)) optShake = !optShake;
         else if (menuSel == 4 && (d || ok)) optVig = !optVig;
     }
@@ -969,7 +1073,7 @@ static void update(unsigned pad, unsigned pressed)
             burst(bossX + rand() % 24, bossY + rand() % 28, 8, 255, 220, 120, 2.5f);
             shake = 8;
         }
-        if (--bossDeath == 0) state = ST_WIN;
+        if (--bossDeath == 0) finish_part();
     }
 
 camera:
@@ -2107,6 +2211,80 @@ static void logo(float y, const char *s, int sc)                 /* titulo com e
     text(x, y, s, sc, RGB(120, 230, 255));
 }
 
+/* fundo espacial do menu: estrelas em paralaxe, planeta com anel, lua e estrela cadente */
+static void space_disc(float cx, float cy, float r, int cr, int cg, int cb, int bands)
+{
+    int dy;
+    for (dy = -(int)r; dy <= (int)r; dy++) {
+        float w = sqrtf(r * r - (float)(dy * dy));
+        int band = bands ? (((dy + (int)r) / 5) % 3) : 0;
+        int sh = band * 14;
+        ui(cx - w, cy + dy, w * 2, 1, RGB(cr - sh > 0 ? cr - sh : 0, cg - sh > 0 ? cg - sh : 0, cb - sh > 0 ? cb - sh : 0));
+        ui(cx + w * 0.30f, cy + dy, w * 0.70f, 1, RGBA(0, 0, 24, 105));        /* lado na sombra */
+    }
+}
+
+static void space_ring(float cx, float cy, int front)
+{
+    int k;
+    for (k = 0; k < 120; k++) {
+        float a = k * (6.2832f / 120.0f), sn = sinf(a), cs = cosf(a);
+        if ((sn > 0) != (front != 0)) continue;
+        ui(cx + cs * 62, cy + sn * 11 - cs * 9, 2, 2, RGB(215, 190, 150));
+        ui(cx + cs * 54, cy + sn * 9.5f - cs * 8, 2, 1, RGB(160, 135, 110));
+    }
+}
+
+static void draw_space_bg(void)
+{
+    int i;
+    float oc = cam; int os = shake;
+    cam = 0; shake = 0;
+
+    for (i = 0; i < 28; i++) {                                   /* degrade: preto-azulado no topo, roxo no horizonte */
+        float t = i / 27.0f;
+        ui(0, i * 8, VW, 8, RGB((int)(4 + 34 * t * t), (int)(4 + 12 * t), (int)(22 + 52 * t)));
+    }
+    ui(0, 120, VW, 40, RGBA(120, 50, 170, 16));                  /* nebulosa */
+    ui(0, 132, VW, 56, RGBA(60, 90, 200, 14));
+
+    for (i = 0; i < 110; i++) {                                  /* estrelas: 3 camadas com velocidades diferentes */
+        unsigned h = hsh(i * 7 + 3);
+        int layer = i % 3;
+        float speed = 0.08f + layer * 0.16f;
+        int sx = (int)(((float)(h % VW) - frame * speed) );
+        int sy = (int)((h >> 9) % 190);
+        int tw = ((frame / (10 + layer * 6)) + i) % 7;
+        u64 c;
+        sx = ((sx % VW) + VW) % VW;
+        c = (h & 0x300) == 0 ? RGB(190, 210, 255) : (h & 0x300) == 0x100 ? RGB(255, 245, 200) : RGB(255, 255, 255);
+        if (tw == 0 && layer) continue;                          /* pisca */
+        ui(sx, sy, layer == 2 ? 2 : 1, layer == 2 ? 2 : 1, c);
+        if (layer == 2 && (h & 0xF000) == 0xA000) {              /* estrela brilhante em cruz */
+            ui(sx - 2, sy, 6, 1, RGBA(255, 255, 255, 120));
+            ui(sx, sy - 2, 1, 6, RGBA(255, 255, 255, 120));
+        }
+    }
+
+    {   /* estrela cadente */
+        int t = frame % 260;
+        if (t < 22) {
+            int k;
+            float hx = 300 - t * 13.0f, hy = 18 + t * 4.0f;
+            for (k = 0; k < 7; k++) ui(hx + k * 6, hy - k * 1.8f, 4, 1, RGBA(255, 255, 255, 190 - k * 26));
+        }
+    }
+
+    space_disc(36, 58, 9, 175, 175, 190, 0);                     /* lua */
+    ui(31, 55, 3, 2, RGB(140, 140, 156)); ui(38, 61, 3, 3, RGB(140, 140, 156)); ui(34, 63, 2, 2, RGB(140, 140, 156));
+
+    space_ring(286, 118, 0);                                     /* anel atras do planeta */
+    space_disc(286, 118, 38, 226, 150, 80, 1);                   /* planeta */
+    space_ring(286, 118, 1);                                     /* anel na frente */
+
+    cam = oc; shake = os;
+}
+
 static void draw_hero_title(float x)                             /* Max posando nas telas de titulo/abertura */
 {
     Player sv = p;
@@ -2140,12 +2318,11 @@ static void draw_menu(void)
     static const char *const optName[OPT_ITEMS] = { "VOLUME", "MUSICA", "EFEITOS", "TREMOR", "VINHETA", "VOLTAR" };
     int i;
     if (menuScr == MN_MAIN) {
-        menu_item(104, "INICIAR", 3, menuSel == 0);
-        menu_item(122, "SENHA", 3, menuSel == 1);
-        menu_item(140, "OPCOES", 3, menuSel == 2);
-        menu_item(158, "CREDITOS", 3, menuSel == 3);
-        text_center(186, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
-        text_center(200, "NA PAREDE: SEGURE PARA ELA E APERTE X", 2, RGB(200, 200, 220));
+        menu_item(100, "INICIAR", 3, menuSel == 0);
+        menu_item(118, "CONTINUAR", 3, menuSel == 1);
+        menu_item(136, "SENHA", 3, menuSel == 2);
+        menu_item(154, "OPCOES", 3, menuSel == 3);
+        menu_item(172, "CREDITOS", 3, menuSel == 4);
     } else if (menuScr == MN_PASS) {
         panel(40, 50, 240, 130);
         text_center(58, "SENHA", 4, RGB(120, 230, 255));
@@ -2190,11 +2367,14 @@ static void draw(void)
     gsKit_set_primalpha(g, GS_SETREG_ALPHA(0, 1, 0, 1, 0), 0);   /* mistura: Cs*As + Cd*(1-As) */
 
     if (state == ST_TITLE) {
-        draw_background(frame * 0.7f);
+        draw_space_bg();
         draw_floor_strip();
         draw_hero_title(40);
         logo(36, "REIS BOT", 6);
-        if (menuScr == MN_MAIN) text_center(84, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
+        if (menuScr == MN_MAIN) {
+            if (menuMsg > 0) text_center(80, "SEM SAVE", 2, RGB(255, 90, 90));
+            else text_center(80, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
+        }
         draw_menu();
         vignette();
     } else if (state == ST_INTRO) {
@@ -2216,11 +2396,14 @@ static void draw(void)
     } else if (state == ST_WIN) {
         draw_background(cam);
         panel(40, 56, 240, 148);
-        text_center(68, "PARTE 1 COMPLETA", 3, RGB(120, 230, 255));
-        text_center(100, "SCORE", 2, RGB(255, 255, 255));
-        { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(116, b, 3, RGB(250, 240, 130)); }
-        text_center(152, "PARTE 2 EM BREVE", 2, RGB(120, 230, 255));
-        if ((frame / 30) % 2) text_center(186, "START PARA JOGAR DE NOVO", 2, RGB(255, 255, 255));
+        { char t[24]; snprintf(t, sizeof(t), "PARTE %d COMPLETA", partsDone); text_center(62, t, 3, RGB(120, 230, 255)); }
+        text_center(90, "SCORE", 2, RGB(255, 255, 255));
+        { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(102, b, 3, RGB(250, 240, 130)); }
+        { char pw[PW_LEN + 1]; current_pw(pw); text_center(128, "SENHA", 2, RGB(200, 200, 220)); text_center(140, pw, 3, RGB(250, 240, 130)); }
+        if (saveStatus == 1) text_center(160, "JOGO SALVO NO MEMORY CARD", 1, RGB(120, 255, 150));
+        else if (saveStatus == 2) text_center(160, "NAO FOI POSSIVEL SALVAR", 1, RGB(255, 120, 120));
+        text_center(172, "PARTE 2 EM BREVE", 2, RGB(120, 230, 255));
+        if ((frame / 30) % 2) text_center(190, "START PARA JOGAR DE NOVO", 2, RGB(255, 255, 255));
     } else {
         draw_background(cam);
         draw_lamps();
@@ -2268,6 +2451,7 @@ static void init_pad(void)
     SifInitRpc(0);
     SifLoadModule("rom0:SIO2MAN", 0, NULL);
     SifLoadModule("rom0:PADMAN", 0, NULL);
+    mc_start();
     padInit(0);
     padPortOpen(0, 0, padBuf);
     do { s = padGetState(0, 0); tries++; }
@@ -2309,6 +2493,7 @@ int main(void)
     unsigned pad, pressed;
     init_pad();
     init_gs();
+    read_save();                 /* opcoes e progresso salvos, se houver */
     srand(12345);
     build_level();
 
