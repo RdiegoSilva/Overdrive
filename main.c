@@ -1007,46 +1007,6 @@ static void vignette(void)                                       /* escurece os 
     }
 }
 
-static void draw_king(float x, float y)                          /* Rei Leao, chefao final */
-{
-    u64 line = RGB(30, 10, 10), armor = RGB(200, 150, 40), armor2 = RGB(150, 100, 20), hi = RGB(255, 225, 120);
-    u64 mane = RGB(210, 100, 20), mane2 = RGB(150, 60, 10), face = RGB(235, 180, 90), gl = RGB(120, 240, 255);
-    u64 cape = RGB(150, 20, 40), cape2 = RGB(110, 14, 30), dk = RGB(70, 40, 20);
-    u64 skin = RGB(245, 200, 160), hair = RGB(60, 36, 24), dress = RGB(255, 140, 190), red = RGB(220, 50, 60);
-    float gx = x - 16, gy = y + 20 + (((frame / 6) % 2) ? 1.0f : 0.0f);   /* a filha se debate */
-
-    shadow(x + 19, y + 56, 46);
-    put(x + 30, y + 16, 12, 38, cape); put(x + 36, y + 20, 6, 34, cape2);  /* capa */
-    put(x + 6, y + 42, 10, 12, armor2); put(x + 22, y + 42, 10, 12, armor2);  /* pernas */
-    put(x + 4, y + 52, 13, 4, line); put(x + 21, y + 52, 13, 4, line);
-    put(x + 2, y + 18, 34, 26, line);                                      /* tronco */
-    put(x + 3, y + 19, 32, 24, armor);
-    put(x + 5, y + 20, 12, 4, hi);
-    put(x + 3, y + 36, 32, 3, armor2);
-    put(x + 15, y + 26, 8, 8, line); put(x + 16, y + 27, 6, 6, gl);
-
-    put(gx + 1, gy, 10, 4, hair);                                          /* filha */
-    put(gx - 1, gy + 3, 2, 6, hair); put(gx + 10, gy + 3, 2, 6, hair);
-    put(gx + 2, gy + 3, 8, 7, skin);
-    put(gx + 4, gy + 6, 1, 2, line); put(gx + 7, gy + 6, 1, 2, line);
-    put(gx + 1, gy + 10, 10, 10, dress);
-    put(gx - 1, gy + 11, 2, 6, skin); put(gx + 11, gy + 11, 2, 6, skin);
-    put(gx + 3, gy + 20, 2, 6, skin); put(gx + 7, gy + 20, 2, 6, skin);
-    put(gx + 3, gy + 26, 3, 2, red); put(gx + 7, gy + 26, 3, 2, red);
-    put(x - 8, y + 28, 12, 7, line); put(x - 7, y + 29, 10, 5, armor);     /* braco que a segura */
-
-    put(x, y - 2, 38, 22, mane2); put(x + 2, y, 34, 18, mane);             /* juba e cabeca */
-    put(x + 3, y - 3, 6, 6, mane2); put(x + 29, y - 3, 6, 6, mane2);
-    put(x + 8, y + 2, 22, 16, face);
-    put(x + 8, y + 9, 10, 8, RGB(250, 215, 150));
-    put(x + 9, y + 10, 4, 3, dk);
-    put(x + 14, y + 5, 5, 3, gl); put(x + 24, y + 5, 5, 3, gl);
-    glow(x + 16.5f, y + 6.5f, 7, 120, 240, 255, 18); glow(x + 26.5f, y + 6.5f, 7, 120, 240, 255, 18);
-    put(x + 10, y + 15, 8, 1, line);
-    put(x + 8, y - 7, 22, 5, hi);                                          /* coroa */
-    put(x + 8, y - 10, 3, 3, hi); put(x + 17, y - 11, 3, 4, hi); put(x + 27, y - 10, 3, 3, hi);
-}
-
 static void draw_subtitle(void)
 {
     const Line *l;
@@ -1401,6 +1361,23 @@ static u64 pal(char ch, int mode)     /* mode: 0 normal, 1/2 carregando, 3 pisca
     case 'y': return RGB(255, 232, 96);
     case 'z': return RGB(255, 150, 40);
     case 'x': return RGB(200, 60, 30);
+    case 'G': return RGB(214, 160, 44);
+    case 'H': return RGB(255, 232, 134);
+    case 'D': return RGB(142, 92, 26);
+    case 'A': return RGB(72, 56, 92);
+    case 'I': return RGB(106, 86, 132);
+    case 'U': return RGB(152, 130, 180);
+    case 'N': return RGB(226, 112, 32);
+    case 'L': return RGB(255, 168, 74);
+    case 'm': return RGB(150, 64, 20);
+    case 'F': return RGB(242, 190, 108);
+    case 'V': return RGB(204, 140, 70);
+    case 'Z': return RGB(255, 228, 172);
+    case 'X': return RGB(150, 22, 44);
+    case 'Q': return RGB(94, 12, 32);
+    case 'i': return RGB(208, 52, 74);
+    case 'v': return RGB(255, 150, 196);
+    case 'u': return RGB(206, 96, 150);
     default: return RGB(255, 0, 255);
     }
 }
@@ -1421,6 +1398,174 @@ static void spr(const Spr *s, float x, float y, int flip, int mode)   /* desenha
     }
 }
 
+
+/* Rei Leao (60x70) e a filha do Max (20x36), pixel art */
+static const char *const spr_king_r[70] = {
+    "............................................................",
+    "...................K..K....K....K....K.....K................",
+    "..................KNKKHK..KHK..KHK..KHK..KKNK...............",
+    "..................KNNNHK..KHK..KHK..KHKKKNNK................",
+    "...................KNHHHKKHHHKKHHHKKHHHNNNK.................",
+    "...................KNHHHNKHHHKKHHHKKHHHNNNK......KK.........",
+    "................KKKKHHHHHHHHHHHHHHHHHHHHNKKKK...KggK........",
+    "...............KLLLKHHHHHHHHHHHHHHHHHHHHKKLLLK.KgggCK.......",
+    "..............KLLLNNHGGGGGGGGTTGGGGGGGDNKLLLNNKgggCCCK......",
+    "........K....KLLNNNNHGGGGGGGGTTGGGGGGGDNLLNNNNNggCCCCK......",
+    ".......KNKKKKKLNNFNmDDDDDDDDDDDDDDDDDDDNLNNFNmmCCCCccNK.....",
+    "........KNNNNNNNNNmmmLLLLLZZZZZZZNNNNNNNNNNNmmmCNNNNNK......",
+    ".........KNNNNNNmmmmLLLLZZZZZZZZZZZNNNNNNNmmmmNNNNNNcK......",
+    ".........KNNNNNNmmmLLLZZAAZZZZZZZAAFFNNNNNmmmNNNNNNNK.......",
+    "..........KNNNNLLLLLLZAAZZZZZVVAAFFFFFNNNNNNNNKNNNNHHK......",
+    "...........KNKLLLLLLZAZZZZZZZFAFFFFFFFFNNNNNLNmDDNDDDK......",
+    "............KKLLLLLLZZZZZZZZFFFFFFFFFFFNNNNNmmmKKHDKK.......",
+    "............KKLLLLLZZZgCCgFFFFFgCCgFFFFFNNmmmmmKKHDK........",
+    "...........KHKLLLLLZZZCCCCFFFFFCCCCFFFVVmmmmmmmKKHDK........",
+    "...........KHLLLLNNZZZFFFFFFFFFFFFFFVVVVmmmmmmmmKHDK........",
+    "..........KHHHLNNNZZZZZZZFFFFFFFFFFVVVVVVmmmmmmKKHDK........",
+    "..........KHHHNNNNZZZZZZZZZFFFFFFVVVVVVVmmmmmmNKKHDK........",
+    "..........KHHNNNNKAAZZZZZZZZFFFVVVVVVVVVmmmmmmmNKHDK........",
+    "..........KHNHNNNAAAZZZZZZZFFVVVVVVVVVVVmmmmmmmKKNDK........",
+    ".........KHNHHHNZZZZZZZZZFFFFVVVVVVVVVVmmmmmmmHHHHNNK.......",
+    ".......KKNHHHHHNNZZZZZZFFFFFVVVVVVVVVVVmmmLmmmHHGGGKNK......",
+    "......KNNHHHHHHHNZZZZFFFFFFFVVVVVVVVVVmmmmmmmHGGGGGGKNKK....",
+    ".....KNKKHHHHHGGGNZFAAAAAAAAVVVVVVVVVmmmmmmmGGGGGGGGKKKNK...",
+    "......KKHHHGGGGGGGNNFWFFFWVVVVVVVVVmmmmmmmmGGGGGGGGDDK.K....",
+    ".......KHGGGGGGGGGGmmWmmmWVVVVVVVmmmmmmmmmGGGGGGGDDDDK......",
+    ".......KGGGGGGGGGDDDDmmmmmmmmmmmmmmmmmmmGGGGGGGDDDDDDK......",
+    "........KGGDDDDDDDDDDDGmmmmmmmmmmmmmmmGGGDDDDDDDDDDDK.......",
+    "........KGGUUUUUUDDDDDGGGGmmmmmmmmmGGGGGGGGDDDDDDDDDK.......",
+    ".........KDUIIIIADDDDDDDDDDDDgggDDDDDDDDDDDDDDDDDDDK........",
+    "....KKKKKKKUIIIIADDGGGGGGGDDgggCCDDGGGGGGGDDDDDDDADK........",
+    "...KUUUUUUHHHHHHHHHHHGGGGGDggCCCCCDGGGGGGGDiUIIIIADK........",
+    "...KUIIIIAGGGGGGGGGGDGGGGGDgCCCCccDGGGGGGGDiUIIIIADK........",
+    "...KUAAAAAGGGGGGGGGGDGGGGGDCCCccccDGGGGGGGDiUIIIIADXK.......",
+    "...KUIIIIAGGGGGGGGGGDDDDDDDDCccccDDDDDDDDDDiUIIIIADXK.......",
+    "...KUIIIIAGGGGGGGGGGDGGGGGGDDcccDDGGGGGGGGDXUIIHHHHHHK......",
+    "...KAAAAAADDDDDDDDDDDGGGGGGGDDDDDGGGGGGGGGDXUIIHGGGGDK......",
+    "....KKKKKKKKKKKKKKHGGGGGGGGGGDDGGGGGGGGGGGDXUIIHGGGGDK......",
+    ".................KHGGGGGGGGGGDDGGGGGGGGGGGDXAAAHGGGGDK......",
+    ".................KHGGGGGGGGGGDDGGGGGGGGGGGDXXXXHGGGGDK......",
+    ".................KHGGGGGGGGGGDDGGGGGGGGGGGDXXXXDDDDDDK......",
+    ".................KIIIIIIIIIHHHHHHHIIIIIIIIIXQXXXXHDXK.......",
+    ".................KIAAAAAAAAHGGGGGDAAAAAAAAAXXQXXXHDXK.......",
+    ".................KIAAAAAAAAHGGCGGDAAAAAAAAAXXXXXXHDXK.......",
+    ".................KIAAAAAAAAHGGGGGDAAAAAAAAAXXXXXXHDXXK......",
+    ".................KAAAAAAAAADDDDDDDAAAAAAAAAXXXXXXHDXXK......",
+    "..................KKUAAAAAAAAAAAAAAAAAAAiiiXXXXXXHDXXK......",
+    "...................KUAAAAAAAAAAAAAAAAAAAiiiXXQXXXHDXXK......",
+    "...................KUIIIIIIIAKKUIIIIIIIAiiiXXXQXXHDXXK......",
+    "...................KUHHHHHHHAKKUHHHHHHHAiiiXXXXXXHDXXK......",
+    "...................KUHGGGGGDAKKUHGGGGGDAiiiXXXXXXHDXXK......",
+    "...................KUHGGGGGDAKKUHGGGGGDAiiXXXXXXXHDXXK......",
+    "...................KUDDDDDDDAKKUDDDDDDDAiiXXXXXXXHDXXK......",
+    "...................KUIIIIIIIAKKUIIIIIIIAiiXXXXQXXHDXXK......",
+    "...................KUIIIIIIIAKKUIIIIIIIAiiXXXXXQXHDXXXK.....",
+    "................KKKKUIIIIIIIAKKUIIIIIIIAiiXXXXXXXHDXXXK.....",
+    "...............KIIIIIIIIIIIIIIIIIIIIIIIIIIXXXXXXXHDXXXK.....",
+    "...............KIAAAAAAAAAAAAIAAAAAAAAAAAAQQQQQQQHDQQQK.....",
+    "...............KIAAAAAAAAAAAAIAAAAAAAAAAAAQQQQQQQHDQQQK.....",
+    "...............KKKKKKKKKKKKKKKKKKKKKKKKKKKQQQQQQQDDQQQK.....",
+    "...............KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKQKKKKK......",
+    "................KKKKKKKKKKKKKKKKKKKKKKKKKK......K...........",
+    "............................................................",
+    "............................................................",
+    "............................................................",
+    "............................................................",
+};
+static const Spr spr_king = { 60, 70, spr_king_r };
+
+static const char *const spr_girl0_r[36] = {
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    ".....KKK.KKKK.KKK...",
+    "....KRRRKBBBBKRRRK..",
+    "....KRRRBBBBBBRRRK..",
+    "....KBBBBBBBBBBBBK..",
+    "....KBBBBBBBBBBBBK..",
+    "....KBBBBBBBBBBBBK..",
+    "...KBBBBBBBBBBBBBK..",
+    "...KBBBBBBBBBBBBBK..",
+    "...KBBBBWEBBBWEsK...",
+    "...KBBBSEEBBBEEsKK..",
+    "..KBBBSSEESssEEsBBK.",
+    "..KBBBSSSSssssssBBK.",
+    "..KBBBKScssssssBBBK.",
+    "..KBBBKKcsMMssKBBBK.",
+    "..KBBBKvvvMMuuuBBBK.",
+    "..KBBBKSvvvuuSSBBBK.",
+    "...KKSSSvvvuuSSKKK..",
+    ".KKKSSSSSvvuuSSuK...",
+    "KSSSSSvvvvvuuSSuK...",
+    "KSSSKKvvvvvuuuuuK...",
+    "KSSSKKvvvvvvuuuuK...",
+    ".KKK.KvvvvvvuuuuK...",
+    "....KvvvvvvvuuuuuK..",
+    "....KuuuuuuuuuuuuK..",
+    "....KuuuuuuuuuuuuK..",
+    ".....KKSSKKKSSKKK...",
+    "......KSSK.KSSK.....",
+    "......KSSK.KSSK.....",
+    "......KSSK.KSSK.....",
+    "......KWWK.KSSK.....",
+    "......KWWK.KWWK.....",
+};
+static const Spr spr_girl0 = { 20, 36, spr_girl0_r };
+
+static const char *const spr_girl1_r[36] = {
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    "....................",
+    ".....KKK.KKKK.KKK...",
+    "....KRRRKBBBBKRRRK..",
+    "....KRRRBBBBBBRRRK..",
+    "....KBBBBBBBBBBBBK..",
+    "....KBBBBBBBBBBBBK..",
+    "....KBBBBBBBBBBBBK..",
+    "...KBBBBBBBBBBBBBK..",
+    ".KKKBBBBBBBBBBBBBK..",
+    "KSSSBBBBWEBBBWEsKK..",
+    "KSSSBBBSEEBBBEEsBBK.",
+    "KSSSKKSSEESssEEsBBK.",
+    ".KKSBBSSSSssssssBBK.",
+    "..KBSBKScssssssBBBK.",
+    "..KBBSKKcsMMssKBBBK.",
+    "..KBBBSvvvMMuuuBBBK.",
+    "..KBBBKSvvvuuSSKKK..",
+    "..KBBBKvSvvuuSSK....",
+    "...KKKvvvvvuuSSuK...",
+    ".....KvvvvvuuSSuK...",
+    ".....KvvvvvuuuuuK...",
+    ".....KvvvvvvuuuuK...",
+    ".....KvvvvvvuuuuK...",
+    "....KvvvvvvvuuuuuK..",
+    "....KuuuuuuuuuuuuK..",
+    "....KuuuuuuuuuuuuK..",
+    ".....KKSSKKKSSKKK...",
+    "......KSSK.KSSK.....",
+    "......KSSK.KSSK.....",
+    "......KSSK.KSSK.....",
+    "......KSSK.KWWK.....",
+    "......KWWK.KWWK.....",
+};
+static const Spr spr_girl1 = { 20, 36, spr_girl1_r };
+
+static void draw_king(float x, float y)                          /* chefao final + filha */
+{
+    float bob = (cutPhase != 0 && (frame / 24) % 2) ? 1.0f : 0.0f;       /* respiracao */
+    float kx = x - 18, ky = y - 10 + bob;
+    int gf = (frame / 8) % 2;                                            /* a filha se debate */
+    shadow(kx + 30, y + 56, 50);
+    spr(gf ? &spr_girl1 : &spr_girl0, kx - 9, ky + 15 + ((frame / 4) % 2 ? 1.0f : 0.0f), 0, 0);
+    spr(&spr_king, kx, ky, 0, 0);
+    glow(kx + 24, ky + 18, 4, 120, 240, 255, 7); glow(kx + 33.5f, ky + 18, 4, 120, 240, 255, 7);   /* olhos */
+    glow(kx + 30, ky + 36, 6, 120, 240, 255, 6);                                                   /* nucleo */
+    glow(kx + 49.5f, ky + 10, 9, 110, 230, 255, 8);                                                /* cristal do cetro */
+}
 
 static void draw_player(void)
 {
