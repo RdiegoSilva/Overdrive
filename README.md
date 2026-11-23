@@ -27,13 +27,13 @@ Opções: volume geral, música, efeitos (guardados, prontos para ligar ao áudi
 
 ## Seleção de chefe
 
-Ao começar (Iniciar), o jogo abre uma tela de **seleção de chefe estilo Mega Man**: grade 3x3 com o herói no centro. Por enquanto só o **Capitão Lobo** (fase "A Rua") está disponível; as outras 7 vagas aparecem com "?" e "EM BREVE". Depois de vencer uma fase ela fica marcada como **FEITO** e você volta para essa tela (também após Game Over). D-pad move, X ou Start escolhe, Círculo volta ao menu.
+**Iniciar** começa direto na **Parte 1 ("A Rua")**, onde o **Capitão Lobo** é o mini-chefe da fase. A tela de **seleção de chefe estilo Mega Man** (estilo Mega Man X: 8 chefes em volta de uma tela de prévia da fase, com o herói no centro; o D-pad atravessa a prévia) só aparece depois de concluir a Parte 1. Por enquanto as 8 vagas aparecem com "?" e "EM BREVE". No Game Over, se a Parte 1 ainda não foi concluída, Start tenta de novo a fase. D-pad move, X ou Start escolhe, Círculo volta ao menu.
 
 ## Fim de parte, senha e save
 
 Ao terminar cada fase aparece a tela de conclusão com a **senha** e o jogo é **salvo no memory card** (slot 1, pasta `REISBOT`). No menu, **Continuar** carrega o save. As opções (volume etc.) também são gravadas ao sair do menu Opções.
 
-Para compilar é preciso linkar a libmc: adicione `-lmc` em `EE_LIBS` no Makefile.
+O Makefile já linka a libmc (`-lmc` em `EE_LIBS`).
 
 ## Senhas
 

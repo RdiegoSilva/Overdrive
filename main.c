@@ -1015,7 +1015,7 @@ static void update_menu(unsigned pressed)
 
     if (menuScr == MN_MAIN) {
         if (!ok) return;
-        if (menuSel == 0) new_game();
+        if (menuSel == 0) { new_game(); start_stage(0); }          /* inicia direto na Parte 1 */
         else if (menuSel == 1) {                                   /* continuar do save do memory card */
             if (sd.parts > 0) { load_password(0, sd.dash, sd.lives, sd.parts); score = sd.score; }
             else menuMsg = 90;
@@ -1034,36 +1034,34 @@ static void update_menu(unsigned pressed)
     }
 }
 
-/* ---------- selecao de chefe (estilo Mega Man) ---------- */
-static const int stageCell[8] = { 1, 0, 2, 3, 5, 6, 7, 8 };      /* celula da grade 3x3 de cada fase (4 = heroi) */
+/* ---------- selecao de chefe (estilo Mega Man X) ---------- */
+/* grade 4x4: anel externo com 8 chefes + 4 cantos decorativos; o miolo 2x2 e a previa da fase.
+   celula = linha * 4 + coluna */
+static const int bossCell[8] = { 1, 2, 4, 8, 7, 11, 13, 14 };
 
-static int cell_stage(int c)
+static int cell_stage(int c)                     /* indice do chefe (0-7) da celula, ou -1 */
 {
     int i;
-    for (i = 0; i < 8; i++) if (stageCell[i] == c) return i;
+    for (i = 0; i < 8; i++) if (bossCell[i] == c) return i;
     return -1;
 }
 
 static void update_select(unsigned pressed)
 {
-    int r = selCell / 3, c = selCell % 3, nr = r, nc = c;
+    int r = selCell / 4, c = selCell % 4, dr = 0, dc = 0, nr, nc;
     if (selMsg > 0) selMsg--;
-    if (pressed & PAD_LEFT) nc--;
-    if (pressed & PAD_RIGHT) nc++;
-    if (pressed & PAD_UP) nr--;
-    if (pressed & PAD_DOWN) nr++;
-    if (nr < 0 || nr > 2 || nc < 0 || nc > 2) { nr = r; nc = c; }
-    else if (nr * 3 + nc == 4) {                                 /* pula o heroi no centro */
-        nr += nr - r; nc += nc - c;
-        if (nr < 0 || nr > 2 || nc < 0 || nc > 2) { nr = r; nc = c; }
+    if (pressed & PAD_LEFT) dc = -1;
+    else if (pressed & PAD_RIGHT) dc = 1;
+    else if (pressed & PAD_UP) dr = -1;
+    else if (pressed & PAD_DOWN) dr = 1;
+    if (dr || dc) {
+        nr = r + dr; nc = c + dc;
+        while (nr >= 1 && nr <= 2 && nc >= 1 && nc <= 2) { nr += dr; nc += dc; }   /* atravessa a previa */
+        if ((nr == 0 || nr == 3) && (nc == 0 || nc == 3)) nr = (nr == 0) ? 1 : 2;  /* canto decorativo: vai para o chefe ao lado */
+        if (nr >= 0 && nr <= 3 && nc >= 0 && nc <= 3 && cell_stage(nr * 4 + nc) >= 0) selCell = nr * 4 + nc;
     }
-    selCell = nr * 3 + nc;
     if (pressed & PAD_CIRCLE) { state = ST_TITLE; menuScr = MN_MAIN; menuSel = 0; return; }
-    if (pressed & (PAD_CROSS | PAD_START)) {
-        int st = cell_stage(selCell);
-        if (st == 0) start_stage(0);
-        else selMsg = 60;
-    }
+    if (pressed & (PAD_CROSS | PAD_START)) selMsg = 60;          /* chefes ainda nao disponiveis */
 }
 
 /* ---------- loop de logica ---------- */
@@ -1076,8 +1074,15 @@ static void update(unsigned pad, unsigned pressed)
     }
     if (state == ST_TITLE) { update_menu(pressed); return; }
     if (state == ST_SELECT) { update_select(pressed); return; }
-    if (state == ST_OVER || state == ST_WIN) {
-        if (pressed & PAD_START) { selCell = 1; selMsg = 0; state = ST_SELECT; }   /* volta a escolher o chefe */
+    if (state == ST_OVER) {
+        if (pressed & PAD_START) {
+            if (clearMask & 1) { selCell = 1; selMsg = 0; state = ST_SELECT; }
+            else { cpx = 3 * TS; start_stage(0); }                      /* Parte 1 ainda nao concluida: tenta de novo */
+        }
+        return;
+    }
+    if (state == ST_WIN) {
+        if (pressed & PAD_START) { selCell = 1; selMsg = 0; state = ST_SELECT; }   /* so apos a Parte 1 aparece a selecao de chefe */
         return;
     }
     if (state == ST_CUT) { update_cut(pressed); goto camera; }
@@ -2400,35 +2405,105 @@ static void draw_menu(void)
     }
 }
 
+#define SEL_CW 60
+#define SEL_CH 48
+#define SEL_X0 40
+#define SEL_Y0 5
+
+static void bevel(float x, float y, float w, float h, u64 hi, u64 face, u64 lo)
+{
+    ui(x, y, w, h, lo);
+    ui(x, y, w - 1, h - 1, hi);
+    ui(x + 1, y + 1, w - 2, h - 2, face);
+}
+
+static void text_in(float x, float w, float y, const char *str, int sc, u64 c)   /* texto centrado numa caixa */
+{
+    text_s(x + (w - ((int)strlen(str) * 4 * sc - sc)) / 2.0f, y, str, sc, c);
+}
+
+static void metal_bg(void)                                       /* parede de metal com canos e rebites */
+{
+    int i;
+    ui(0, 0, VW, VH, RGB(52, 60, 100));
+    for (i = 0; i < VH; i += 16) {
+        ui(0, i + 3, VW, 2, RGB(88, 98, 146));
+        ui(0, i + 5, VW, 6, RGB(40, 46, 84));
+        ui(0, i + 11, VW, 2, RGB(24, 28, 58));
+    }
+    for (i = 0; i < VW; i += 40) {
+        ui(i, 0, 2, VH, RGBA(10, 12, 30, 60));
+        ui(i + 2, 0, 1, VH, RGBA(160, 170, 220, 30));
+    }
+}
+
 static void draw_select(void)
 {
-    static const char *const stageName[8] = { "A RUA - CAPITAO LOBO", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE" };
-    int c, st;
-    float oc = cam; int os = shake;
-    draw_space_bg();
+    static const char *const stageName[8] = { "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE" };
+    int c, i;
+    float oc = cam, px, py, pw, ph;
+    int os = shake;
     cam = 0; shake = 0;
-    text_center(8, "ESCOLHA O CHEFE", 3, RGB(250, 240, 130));
-    for (c = 0; c < 9; c++) {
-        float x = 48 + (c % 3) * 80, y = 32 + (c / 3) * 56;
-        int sel = (c == selCell);
-        u64 border = sel ? (((frame / 6) % 2) ? RGB(250, 240, 130) : RGB(255, 255, 255)) : RGB(70, 76, 130);
-        st = cell_stage(c);
-        ui(x - 3, y - 3, 70, 58, border);
-        ui(x, y, 64, 52, (c == 4 || st == 0) ? RGB(16, 18, 56) : RGB(10, 10, 24));
-        if (c == 4) {                                              /* heroi no centro */
-            spr(&spr_max_idle, x + 32 - 10, y + 13, 0, 0);
-        } else if (st == 0) {                                      /* Capitao Lobo da fase A Rua */
-            spr(&spr_wolf, x + 32 - 18, y + 52 - 47, 0, 0);
-            if (clearMask & 1) text_s(x + 2, y + 2, "FEITO", 1, RGB(120, 255, 150));
-        } else {
-            text_s(x + 26, y + 16, "?", 4, RGB(90, 94, 130));
-            ui(x, y, 64, 52, RGBA(0, 0, 0, 90));
+    metal_bg();
+
+    /* moldura externa */
+    bevel(SEL_X0 - 6, SEL_Y0 - 5, 4 * SEL_CW + 12, 4 * SEL_CH + 10, RGB(190, 198, 232), RGB(70, 80, 130), RGB(20, 24, 54));
+
+    for (c = 0; c < 16; c++) {
+        int col = c % 4, row = c / 4;
+        float x = SEL_X0 + col * SEL_CW, y = SEL_Y0 + row * SEL_CH;
+        int st = cell_stage(c);
+        if (col >= 1 && col <= 2 && row >= 1 && row <= 2) continue;       /* miolo: previa */
+        if (st >= 0) {                                                    /* retrato do chefe */
+            int sel = (c == selCell);
+            u64 border = sel ? (((frame / 6) % 2) ? RGB(250, 240, 130) : RGB(255, 255, 255)) : RGB(110, 120, 176);
+            ui(x + 2, y + 2, SEL_CW - 4, SEL_CH - 4, border);
+            ui(x + 4, y + 4, SEL_CW - 8, SEL_CH - 8, RGB(10, 10, 28));
+            ui(x + 4, y + 4, SEL_CW - 8, 1, RGB(34, 38, 80));
+            ui(x + 4, y + 4, 1, SEL_CH - 8, RGB(34, 38, 80));
+            text_in(x, SEL_CW, y + 14, "?", 4, sel ? RGB(150, 154, 200) : RGB(90, 94, 130));
+        } else if (c == 0) {
+            bevel(x + 3, y + 3, SEL_CW - 6, SEL_CH - 6, RGB(150, 200, 170), RGB(46, 96, 74), RGB(20, 50, 40));
+            text_in(x, SEL_CW, y + 18, "FASE", 2, RGB(255, 255, 255));
+        } else if (c == 3) {
+            bevel(x + 3, y + 3, SEL_CW - 6, SEL_CH - 6, RGB(150, 200, 170), RGB(46, 96, 74), RGB(20, 50, 40));
+            text_in(x, SEL_CW, y + 18, "MAPA", 2, RGB(255, 255, 255));
+        } else if (c == 12) {
+            bevel(x + 3, y + 3, SEL_CW - 6, SEL_CH - 6, RGB(150, 200, 170), RGB(46, 96, 74), RGB(20, 50, 40));
+            text_in(x, SEL_CW, y + 18, "ESPEC", 2, RGB(255, 255, 255));
+        } else {                                                          /* logo do jogo */
+            bevel(x + 3, y + 3, SEL_CW - 6, SEL_CH - 6, RGB(150, 190, 255), RGB(40, 72, 176), RGB(16, 30, 90));
+            text_in(x, SEL_CW, y + 9, "REIS", 2, RGB(255, 255, 255));
+            text_in(x, SEL_CW, y + 25, "BOT", 2, RGB(120, 230, 255));
         }
     }
+
+    /* previa da fase no centro */
+    px = SEL_X0 + SEL_CW + 5; py = SEL_Y0 + SEL_CH + 5; pw = 2 * SEL_CW - 10; ph = 2 * SEL_CH - 10;
+    bevel(px - 3, py - 3, pw + 6, ph + 6, RGB(190, 198, 232), RGB(24, 28, 60), RGB(10, 12, 30));
+    for (i = 0; i < (int)ph; i += 4) {                                    /* ceu em degrade */
+        float t = i / ph;
+        ui(px, py + i, pw, 4, RGB((int)(8 + 80 * t * t), (int)(10 + 50 * t * t), (int)(44 + 90 * t)));
+    }
+    for (i = 0; i < 5; i++) {                                             /* predios */
+        float bw = 14 + (i % 3) * 5, bh = 26 + ((i * 7) % 5) * 6, bx = px + 6 + i * 22;
+        ui(bx, py + ph - 10 - bh, bw, bh, RGB(30, 36, 90));
+        ui(bx, py + ph - 10 - bh, bw, 1, RGB(60, 72, 140));
+        ui(bx + 3, py + ph - 10 - bh + 5, 3, 3, RGB(250, 230, 120));
+        if (bh > 36) ui(bx + bw - 6, py + ph - 10 - bh + 13, 3, 3, RGB(255, 188, 96));
+    }
+    ui(px, py + ph - 10, pw, 10, RGB(64, 146, 98));                       /* piso */
+    ui(px, py + ph - 10, pw, 2, RGB(176, 232, 128));
+    spr(&spr_max_idle, px + pw / 2 - 10, py + ph - 10 - 26, 0, 0);        /* heroi */
+    if (selMsg > 0) {
+        ui(px, py + 24, pw, 34, RGBA(0, 0, 0, 100));
+        text_in(px, pw, py + 28, "AINDA NAO", 2, RGB(255, 90, 90));
+        text_in(px, pw, py + 42, "DISPONIVEL", 2, RGB(255, 90, 90));
+    }
+
     {
         int cs = cell_stage(selCell);
-        if (cs >= 0) text_center(204, stageName[cs], 2, (cs == 0) ? RGB(255, 255, 255) : RGB(150, 154, 190));
-        if (selMsg > 0) text_center(190, "AINDA NAO DISPONIVEL", 2, RGB(255, 90, 90));
+        if (cs >= 0) text_center(206, stageName[cs], 2, RGB(255, 255, 255));
     }
     cam = oc; shake = os;
     vignette();
