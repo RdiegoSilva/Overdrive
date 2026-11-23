@@ -80,6 +80,12 @@ static Item it[MAX_ITEMS];
 static Part pt[MAX_PARTS];
 
 static int state = ST_TITLE;
+/* menu do titulo: 0 principal, 1 opcoes, 2 creditos */
+enum { MN_MAIN, MN_OPT, MN_CRED, MN_PASS };
+static int menuScr = MN_MAIN, menuSel = 0;
+static int optVol = 8, optMus = 8, optSfx = 8;      /* volumes 0-10 (guardados; ligar ao audsrv quando houver som) */
+static int pwIdx[5] = {0, 0, 0, 0, 0}, pwPos = 0, pwErr = 0;   /* tela de senha */
+static int optShake = 1, optVig = 1;                /* tremor de tela / vinheta ligados */
 static int paused = 0, ready = 0, frame = 0, score = 0;
 static int bossActive = 0, bossDeath = 0, shake = 0;
 static int hasDash = 0, dashMsg = 0;        /* dash: ganho ao derrotar o Capitao Lobo, permanente */
@@ -129,7 +135,7 @@ static void ui(float x, float y, float w, float h, u64 c)
 static void put(float x, float y, float w, float h, u64 c)
 {
     float sx = x - cam;
-    if (shake > 0) sx += ((frame & 1) ? 1.0f : -1.0f) * (shake > 6 ? 2.0f : 1.0f);
+    if (shake > 0 && optShake) sx += ((frame & 1) ? 1.0f : -1.0f) * (shake > 6 ? 2.0f : 1.0f);
     if (sx + w < 0 || sx > VW || y + h < 0 || y > VH) return;
     ui(sx, y, w, h, c);
 }
@@ -413,6 +419,12 @@ static void respawn_player(void)
     build_level();
     spawn_enemies();
     bossActive = 0; bossDeath = 0; shake = 0; miniState = 0;
+    if (hasDash) {                                   /* ja derrotou o Capitao Lobo: nao repete a luta */
+        miniState = 2;
+        miniCam = cpx + 6 - VW / 2.0f;
+        if (miniCam < 0) miniCam = 0;
+        if (miniCam > MW * TS - VW) miniCam = MW * TS - VW;
+    }
     ready = 90;
 }
 
@@ -807,6 +819,111 @@ static void start_mini(void)
         }
 }
 
+/* ---------- senhas ---------- */
+/* a senha guarda: checkpoint (0-9), se tem o dash e vidas (1-8) */
+#define PW_LEN 5
+static const char pwChars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* 32 simbolos (sem I, O, 0, 1) */
+static const int cpCols[10] = { 3, 84, 118, 157, 180, 200, 222, 237, 248, 285 };
+
+static int cp_index(void)
+{
+    int i;
+    for (i = 9; i > 0; i--) if ((int)cpx >= cpCols[i] * TS) return i;
+    return 0;
+}
+
+static unsigned pw_hash(unsigned x) { return (x * 2654435761u + 0x1234567u) & 0x1FFFFFFu; }
+static unsigned pw_chk(unsigned d) { return (d * 73u + 41u) & 0xFFu; }
+
+static void pw_make(char *out, int cp, int dash, int lives)
+{
+    unsigned d, h;
+    int i;
+    if (lives < 1) lives = 3;
+    if (lives > 8) lives = 8;
+    d = (unsigned)cp | ((unsigned)(dash ? 1 : 0) << 4) | ((unsigned)(lives - 1) << 5);
+    h = pw_hash((d << 8) | pw_chk(d));
+    for (i = 0; i < PW_LEN; i++) out[PW_LEN - 1 - i] = pwChars[(h >> (5 * i)) & 31];
+    out[PW_LEN] = 0;
+}
+
+static int pw_decode(const int *idx, int *cp, int *dash, int *lives)
+{
+    unsigned h = 0, d;
+    int i;
+    for (i = 0; i < PW_LEN; i++) h = (h << 5) | (unsigned)idx[i];
+    for (d = 0; d < 256; d++) {
+        if ((d & 15) > 9) continue;
+        if (pw_hash((d << 8) | pw_chk(d)) == h) {
+            *cp = (int)(d & 15); *dash = (int)((d >> 4) & 1); *lives = (int)(d >> 5) + 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void current_pw(char *out)
+{
+    pw_make(out, cp_index(), hasDash, p.lives);
+}
+
+static void load_password(int cp, int dash, int lives)
+{
+    new_game();
+    hasDash = dash; dashMsg = 0;
+    cpx = (float)(cpCols[cp] * TS);
+    p.lives = lives;
+    respawn_player();
+}
+
+/* ---------- menu do titulo ---------- */
+#define OPT_ITEMS 6
+static int clamp10(int v) { return v < 0 ? 0 : (v > 10 ? 10 : v); }
+
+static void update_menu(unsigned pressed)
+{
+    int ok = (pressed & (PAD_CROSS | PAD_START)) != 0;
+    int back = (pressed & PAD_CIRCLE) != 0;
+    int n = (menuScr == MN_MAIN) ? 4 : OPT_ITEMS;
+
+    if (pwErr > 0) pwErr--;
+    if (menuScr == MN_CRED) {
+        if (ok || back) { menuScr = MN_MAIN; menuSel = 3; }
+        return;
+    }
+    if (menuScr == MN_PASS) {
+        if (back) { menuScr = MN_MAIN; menuSel = 1; return; }
+        if (pressed & PAD_LEFT) pwPos = (pwPos + PW_LEN - 1) % PW_LEN;
+        if (pressed & PAD_RIGHT) pwPos = (pwPos + 1) % PW_LEN;
+        if (pressed & PAD_UP) pwIdx[pwPos] = (pwIdx[pwPos] + 1) % 32;
+        if (pressed & PAD_DOWN) pwIdx[pwPos] = (pwIdx[pwPos] + 31) % 32;
+        if (ok) {
+            int cp, dash, lives;
+            if (pw_decode(pwIdx, &cp, &dash, &lives)) load_password(cp, dash, lives);
+            else pwErr = 90;
+        }
+        return;
+    }
+    if (pressed & PAD_UP) menuSel = (menuSel + n - 1) % n;
+    if (pressed & PAD_DOWN) menuSel = (menuSel + 1) % n;
+
+    if (menuScr == MN_MAIN) {
+        if (!ok) return;
+        if (menuSel == 0) new_game();
+        else if (menuSel == 1) { menuScr = MN_PASS; pwPos = 0; pwErr = 0; }
+        else if (menuSel == 2) { menuScr = MN_OPT; menuSel = 0; }
+        else { menuScr = MN_CRED; }
+    } else {
+        int d = ((pressed & PAD_RIGHT) ? 1 : 0) - ((pressed & PAD_LEFT) ? 1 : 0);
+        if (back || (ok && menuSel == OPT_ITEMS - 1)) { menuScr = MN_MAIN; menuSel = 2; return; }
+        if (menuSel == 0) optVol = clamp10(optVol + d);
+        else if (menuSel == 1) optMus = clamp10(optMus + d);
+        else if (menuSel == 2) optSfx = clamp10(optSfx + d);
+        else if (menuSel == 3 && (d || ok)) optShake = !optShake;
+        else if (menuSel == 4 && (d || ok)) optVig = !optVig;
+    }
+}
+
 /* ---------- loop de logica ---------- */
 static void update(unsigned pad, unsigned pressed)
 {
@@ -815,7 +932,8 @@ static void update(unsigned pad, unsigned pressed)
         if (--introT <= 0 || (pressed & PAD_START)) state = ST_PLAY;
         return;
     }
-    if (state == ST_TITLE || state == ST_OVER || state == ST_WIN) {
+    if (state == ST_TITLE) { update_menu(pressed); return; }
+    if (state == ST_OVER || state == ST_WIN) {
         if (pressed & PAD_START) new_game();
         return;
     }
@@ -1150,6 +1268,7 @@ static void draw_tiles(void)
 static void vignette(void)                                       /* escurece os cantos da tela */
 {
     int k;
+    if (!optVig) return;
     for (k = 0; k < 6; k++) {
         float w = 4 + k * 4;
         ui(0, 0, w, VH, RGBA(0, 0, 16, 7)); ui(VW - w, 0, w, VH, RGBA(0, 0, 16, 7));
@@ -1999,6 +2118,72 @@ static void draw_hero_title(float x)                             /* Max posando 
     p = sv; cam = oc; shake = os;
 }
 
+static void menu_item(float y, const char *str, int sc, int sel)
+{
+    u64 c = sel ? RGB(250, 240, 130) : RGB(255, 255, 255);
+    float x = (VW - (int)strlen(str) * 4 * sc) / 2.0f - 12;
+    text_center(y, str, sc, c);
+    if (sel && (frame / 12) % 2 == 0) {                         /* seta */
+        ui(x - 2, y + sc * 2 - 1, 2, 2, c); ui(x, y + sc * 2 - 3, 2, 6, c); ui(x + 2, y + sc * 2 - 5, 2, 10, c);
+    }
+}
+
+static void draw_bar(float x, float y, int v, int sel)
+{
+    int k;
+    for (k = 0; k < 10; k++)
+        ui(x + k * 7, y, 5, 8, k < v ? (sel ? RGB(250, 240, 130) : RGB(120, 230, 255)) : RGB(50, 54, 96));
+}
+
+static void draw_menu(void)
+{
+    static const char *const optName[OPT_ITEMS] = { "VOLUME", "MUSICA", "EFEITOS", "TREMOR", "VINHETA", "VOLTAR" };
+    int i;
+    if (menuScr == MN_MAIN) {
+        menu_item(104, "INICIAR", 3, menuSel == 0);
+        menu_item(122, "SENHA", 3, menuSel == 1);
+        menu_item(140, "OPCOES", 3, menuSel == 2);
+        menu_item(158, "CREDITOS", 3, menuSel == 3);
+        text_center(186, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
+        text_center(200, "NA PAREDE: SEGURE PARA ELA E APERTE X", 2, RGB(200, 200, 220));
+    } else if (menuScr == MN_PASS) {
+        panel(40, 50, 240, 130);
+        text_center(58, "SENHA", 4, RGB(120, 230, 255));
+        for (i = 0; i < PW_LEN; i++) {
+            float x = 78 + i * 34;
+            char ch[2];
+            ch[0] = pwChars[pwIdx[i]]; ch[1] = 0;
+            ui(x - 2, 96, 32, 34, (i == pwPos) ? RGB(250, 240, 130) : RGB(70, 76, 130));
+            ui(x, 98, 28, 30, RGB(10, 12, 40));
+            text(x + 8, 103, ch, 4, (i == pwPos) ? RGB(250, 240, 130) : RGB(255, 255, 255));
+        }
+        text_center(142, "CIMA BAIXO: LETRA  ESQ DIR: POSICAO", 1, RGB(200, 200, 220));
+        text_center(152, "X OU START CONFIRMA", 2, RGB(255, 255, 255));
+        if (pwErr > 0) text_center(166, "SENHA INVALIDA", 2, RGB(255, 90, 90));
+    } else if (menuScr == MN_OPT) {
+        panel(30, 46, 260, 150);
+        text_center(54, "OPCOES", 3, RGB(120, 230, 255));
+        for (i = 0; i < OPT_ITEMS; i++) {
+            float y = 82 + i * 18;
+            int sel = (menuSel == i);
+            u64 c = sel ? RGB(250, 240, 130) : RGB(255, 255, 255);
+            text(52, y, optName[i], 2, c);
+            if (sel && (frame / 12) % 2 == 0) { ui(40, y + 3, 2, 4, c); ui(42, y + 1, 2, 8, c); }
+            if (i == 0) draw_bar(160, y + 1, optVol, sel);
+            else if (i == 1) draw_bar(160, y + 1, optMus, sel);
+            else if (i == 2) draw_bar(160, y + 1, optSfx, sel);
+            else if (i == 3) text(160, y, optShake ? "LIGADO" : "DESLIGADO", 2, c);
+            else if (i == 4) text(160, y, optVig ? "LIGADO" : "DESLIGADO", 2, c);
+        }
+    } else {
+        panel(40, 56, 240, 116);
+        text_center(66, "CREDITOS", 4, RGB(120, 230, 255));
+        text_center(106, "CRIADO POR", 2, RGB(200, 200, 220));
+        text_center(124, "DIEGO REIS", 4, RGB(250, 240, 130));
+        if ((frame / 30) % 2) text_center(154, "X VOLTA", 2, RGB(255, 255, 255));
+    }
+}
+
 static void draw(void)
 {
     gsKit_clear(g, RGB(0, 0, 0));
@@ -2009,10 +2194,8 @@ static void draw(void)
         draw_floor_strip();
         draw_hero_title(40);
         logo(36, "REIS BOT", 6);
-        text_center(84, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
-        if ((frame / 30) % 2) text_center(126, "APERTE START", 3, RGB(250, 240, 130));
-        text_center(160, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
-        text_center(176, "NA PAREDE: SEGURE PARA ELA E APERTE X", 2, RGB(200, 200, 220));
+        if (menuScr == MN_MAIN) text_center(84, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
+        draw_menu();
         vignette();
     } else if (state == ST_INTRO) {
         draw_background(0);
@@ -2025,9 +2208,10 @@ static void draw(void)
     } else if (state == ST_OVER) {
         draw_background(cam);
         panel(40, 56, 240, 148);
-        text_center(80, "GAME OVER", 5, RGB(255, 90, 90));
-        text_center(140, "SCORE", 2, RGB(255, 255, 255));
-        { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(158, b, 3, RGB(250, 240, 130)); }
+        text_center(76, "GAME OVER", 5, RGB(255, 90, 90));
+        { char pw[PW_LEN + 1]; current_pw(pw); text_center(108, "SENHA", 2, RGB(200, 200, 220)); text_center(122, pw, 3, RGB(250, 240, 130)); }
+        text_center(144, "SCORE", 2, RGB(255, 255, 255));
+        { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(160, b, 3, RGB(250, 240, 130)); }
         if ((frame / 30) % 2) text_center(186, "START PARA TENTAR DE NOVO", 2, RGB(255, 255, 255));
     } else if (state == ST_WIN) {
         draw_background(cam);
@@ -2064,8 +2248,12 @@ static void draw(void)
         } else draw_hud();
         if (ready > 0 && (frame / 8) % 2) text_center(100, "READY", 4, RGB(255, 255, 255));
         if (paused) {
-            panel(110, 90, 100, 36);
-            text_center(100, "PAUSA", 4, RGB(255, 255, 255));
+            char pw[PW_LEN + 1];
+            current_pw(pw);
+            panel(80, 76, 160, 76);
+            text_center(84, "PAUSA", 4, RGB(255, 255, 255));
+            text_center(112, "SENHA", 2, RGB(200, 200, 220));
+            text_center(126, pw, 3, RGB(250, 240, 130));
         }
     }
 

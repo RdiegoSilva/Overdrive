@@ -20,6 +20,15 @@ make clean
 | Quadrado | Atirar (segure ~1 s e solte = tiro carregado, dano 3) |
 | Start | Começar / pausar |
 
+## Menu
+
+Tela de título com **Iniciar**, **Senha**, **Opções** e **Créditos** (cima/baixo escolhe, X ou Start confirma, Círculo volta).
+Opções: volume geral, música, efeitos (guardados, prontos para ligar ao áudio), tremor de tela e vinheta (ligar/desligar).
+
+## Senhas
+
+A senha de 5 letras/números aparece na **pausa** e no **Game Over**. Ela guarda o checkpoint, as vidas (1 a 8) e se você já tem o dash (Capitão Lobo derrotado). Digite em **Senha** no menu: cima/baixo muda o caractere, esquerda/direita troca a posição, X ou Start confirma. O score não é guardado.
+
 ## O que tem
 
 - **Parte 1 ("A Rua")**: fase com rolagem lateral, buracos, espinhos, escada e plataformas, terminando numa porta de saída
