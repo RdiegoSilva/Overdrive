@@ -45,6 +45,7 @@
 #define MAX_PARTS 48
 
 #define RGB(r, g, b) GS_SETREG_RGBAQ((r), (g), (b), 0x80, 0x00)
+#define RGBA(r, g, b, a) GS_SETREG_RGBAQ((r), (g), (b), (a), 0x00)   /* a: 0..128 (128 = opaco) */
 
 enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT };
 enum { E_MET, E_BATTON, E_BOSS };
@@ -174,6 +175,35 @@ static void panel(float x, float y, float w, float h)
     ui(x, y, w, h, RGB(10, 12, 40));
 }
 
+static unsigned hsh(unsigned n)                 /* hash barato para variar predios, janelas, tijolos */
+{
+    n *= 2654435761u; n ^= n >> 15; n *= 2246822519u; n ^= n >> 13;
+    return n;
+}
+
+static void uiblob(float x, float y, float r, u64 c)   /* retangulo "arredondado" (coords de tela) */
+{
+    if (2 * r - 4 <= 0) return;
+    ui(x - r, y - r + 2, 2 * r, 2 * r - 4, c);
+    ui(x - r + 2, y - r, 2 * r - 4, 2, c);
+    ui(x - r + 2, y + r - 2, 2 * r - 4, 2, c);
+}
+
+static void blob(float x, float y, float r, u64 c)     /* idem, no mundo */
+{
+    if (2 * r - 4 <= 0) return;
+    put(x - r, y - r + 2, 2 * r, 2 * r - 4, c);
+    put(x - r + 2, y - r, 2 * r - 4, 2, c);
+    put(x - r + 2, y + r - 2, 2 * r - 4, 2, c);
+}
+
+static void glow(float x, float y, float r, int cr, int cg, int cb, int a)   /* halo de luz translucido */
+{
+    int k;
+    for (k = 0; k < 5; k++)                                      /* aneis concentricos: degrade suave */
+        blob(x, y, r * (1.0f - k * 0.18f), RGBA(cr, cg, cb, a));
+}
+
 /* ---------- particulas ---------- */
 static void burst(float x, float y, int n, int r, int gr, int b, float spd)
 {
@@ -211,7 +241,7 @@ static void draw_parts(void)
         if (!q->active) continue;
         f = (q->life >= 12) ? 256 : q->life * 256 / 12;
         sz = (q->life > 8) ? q->size : 1;
-        put(q->x - sz / 2.0f, q->y - sz / 2.0f, sz, sz, RGB(q->r * f / 256, q->g * f / 256, q->b * f / 256));
+        put(q->x - sz / 2.0f, q->y - sz / 2.0f, sz, sz, RGBA(q->r, q->g, q->b, 20 + (108 * f) / 256));
     }
 }
 
@@ -449,6 +479,9 @@ static void update_player(unsigned pad, unsigned pressed)
     if (!p.ground && p.vy >= 0 && hits(p.x, p.y + 1, p.w, p.h, 1)) p.ground = 1;
     if (p.ground && !was && fall > 2.5f)                    /* poeira ao pousar */
         burst(p.x + p.w / 2, p.y + p.h, 5, 200, 200, 215, 1.2f);
+
+    if (p.ground && p.vx != 0 && (frame % 9) == 0)                  /* poeirinha ao correr */
+        burst(p.x + p.w / 2 - p.dir * 5, p.y + p.h, 1, 190, 190, 210, 0.5f);
 
     if (hits(p.x + 2, p.y + 2, p.w - 4, p.h - 4, 2)) { p.hp = 0; kill_player(); return; }
     if (p.y > MH * TS + 20) { p.hp = 0; kill_player(); return; }
@@ -691,61 +724,185 @@ camera:
 }
 
 /* ---------- desenho ---------- */
+static void shadow(float cx, float feet, float w)     /* sombra de contato na superficie abaixo */
+{
+    int tx = (int)floorf(cx / TS), ty = (int)floorf(feet / TS);
+    float gy, h, sw;
+    if (ty < 0) ty = 0;
+    for (; ty < MH && tile_at(tx, ty) != 1; ty++) ;
+    if (ty >= MH) return;
+    gy = ty * TS; h = gy - feet;
+    if (h < 0) h = 0;
+    if (h > 48) return;
+    sw = w * (1.0f - h / 72.0f);
+    put(cx - sw / 2, gy - 1, sw, 2, RGBA(0, 0, 24, 80));
+    put(cx - sw / 2 + 2, gy - 2, sw - 4, 1, RGBA(0, 0, 24, 40));
+}
+
 static void draw_background(float c)
 {
-    int i, w;
+    int i, k, j;
     float par = c * 0.4f, par2 = c * 0.15f;
-    int base = (int)(par / 60), base2 = (int)(par2 / 80);
+    int base = (int)(par / 64), base2 = (int)(par2 / 56);
 
-    for (i = 0; i < 14; i++)                                     /* ceu em degrade */
-        ui(0, i * 16, VW, 16, RGB(12 + i * 5, 14 + i * 4, 46 + i * 7));
-
-    for (i = 0; i < 24; i++) {                                   /* estrelas */
-        int sx = ((i * 47 + 13 - (int)(c * 0.05f)) % VW + VW) % VW;
-        int sy = (i * 29) % 110;
-        int tw = ((frame / 20) + i) % 4;
-        ui(sx, sy, 1, 1, tw == 0 ? RGB(120, 120, 170) : RGB(235, 235, 255));
+    for (i = 0; i < 28; i++) {                                   /* ceu em degrade */
+        float t = i / 27.0f, t2 = t * t;
+        ui(0, i * 8, VW, 8, RGB((int)(8 + 90 * t2), (int)(10 + 52 * t2), (int)(40 + 92 * t)));
     }
 
-    ui(252, 22, 8, 14, RGB(238, 238, 200));                      /* lua */
-    ui(250, 24, 12, 10, RGB(238, 238, 200));
-    ui(253, 25, 3, 3, RGB(210, 210, 170));
-    ui(257, 29, 2, 2, RGB(210, 210, 170));
-
-    for (i = 0; i < 6; i++) {                                    /* montanhas ao fundo */
-        int idx = base2 + i;
-        float bx = idx * 80 - par2;
-        float h = 24 + ((idx * 53) % 4) * 8;
-        ui(bx + 28, 192 - h, 24, h, RGB(44, 44, 100));
-        ui(bx + 14, 192 - h * 0.66f, 52, h * 0.66f, RGB(44, 44, 100));
-        ui(bx, 192 - h * 0.33f, 80, h * 0.33f, RGB(44, 44, 100));
+    for (i = 0; i < 40; i++) {                                   /* estrelas (algumas em cruz) */
+        int sx = ((i * 47 + 13 - (int)(c * 0.03f)) % VW + VW) % VW;
+        int sy = hsh(i + 7) % 120;
+        int tw = ((frame / 18) + i) % 5;
+        u64 col = (tw == 0) ? RGB(110, 110, 170) : RGB(235, 235, 255);
+        ui(sx, sy, 1, 1, col);
+        if (i % 7 == 0 && tw != 0) { ui(sx - 1, sy, 3, 1, col); ui(sx, sy - 1, 1, 3, col); }
     }
-
-    for (i = 0; i < 7; i++) {                                    /* predios */
-        int idx = base + i;
-        float bx = idx * 60 - par;
-        float h = 40 + ((idx * 37) % 5) * 12;
-        ui(bx, 192 - h, 50, h, RGB(26, 36, 84));
-        ui(bx, 192 - h, 50, 2, RGB(48, 62, 120));
-        for (w = 0; w < 4; w++) {
-            int lit = ((idx * 13 + w * 7) % 3) != 0;
-            ui(bx + 8 + (w % 2) * 22, 192 - h + 10 + (w / 2) * 14, 6, 6,
-               lit ? RGB(250, 230, 120) : RGB(40, 52, 100));
+    {                                                            /* estrela cadente */
+        int t = frame % 520;
+        if (t < 22) {
+            float sx = 210 - t * 7, sy = 18 + t * 2.4f;
+            ui(sx, sy, 8, 1, RGB(255, 255, 255));
+            ui(sx + 8, sy - 3, 12, 1, RGBA(200, 200, 255, 60));
+            ui(sx + 20, sy - 7, 12, 1, RGBA(200, 200, 255, 24));
         }
     }
 
-    ui(0, 192, VW, 32, RGB(8, 8, 28));                           /* abismo dos buracos */
+    for (k = 0; k < 7; k++) uiblob(258, 36, 40 - k * 3, RGBA(190, 190, 255, 3));   /* lua com halo */
+    for (k = -13; k <= 13; k++) {
+        int hw = (int)sqrtf((float)(14 * 14 - k * k));
+        ui(258 - hw, 36 + k, 2 * hw, 1, RGB(238, 238, 205));
+    }
+    ui(251, 31, 4, 3, RGB(208, 208, 168)); ui(262, 40, 4, 3, RGB(208, 208, 168));
+    ui(257, 27, 2, 2, RGB(208, 208, 168)); ui(264, 32, 2, 2, RGB(218, 218, 180));
+
+    for (i = 0; i < 3; i++) {                                    /* nuvens a deriva */
+        float cx = (float)((int)(i * 130 + 60 - c * 0.06f - frame * 0.12f) % (VW + 90));
+        float cy = 44 + i * 26;
+        if (cx < 0) cx += VW + 90;
+        cx -= 50;
+        ui(cx + 10, cy, 24, 3, RGBA(120, 110, 180, 44));
+        ui(cx + 4, cy + 3, 38, 3, RGBA(120, 110, 180, 44));
+        ui(cx, cy + 6, 46, 3, RGBA(120, 110, 180, 44));
+        ui(cx + 6, cy + 9, 34, 2, RGBA(90, 84, 150, 40));
+    }
+
+    for (i = 0; i < 8; i++) {                                    /* predios distantes */
+        int idx = base2 + i;
+        unsigned h1 = hsh(idx * 3 + 1);
+        float bx = idx * 56 - par2, bw = 34 + (h1 % 5) * 4, bh = 46 + ((h1 >> 4) % 6) * 10;
+        ui(bx, 192 - bh, bw, bh, RGB(40, 42, 100));
+        ui(bx, 192 - bh, bw, 1, RGB(70, 72, 140));
+        for (j = 0; j < (int)((bh - 8) / 10); j++)
+            for (k = 0; k < 2; k++)
+                if (hsh(idx * 17 + j * 5 + k) % 5 == 0)
+                    ui(bx + 8 + k * 14, 192 - bh + 6 + j * 10, 3, 3, RGB(130, 120, 165));
+        if (h1 & 8) {
+            ui(bx + bw / 2, 192 - bh - 8, 1, 8, RGB(40, 42, 100));
+            if (((frame / 30) + idx) % 2) ui(bx + bw / 2 - 1, 192 - bh - 10, 3, 2, RGB(255, 60, 60));
+        }
+    }
+
+    for (i = 0; i < 6; i++)                                      /* neblina no horizonte */
+        ui(0, 150 + i * 7, VW, 7, RGBA(160, 105, 190, 5 + i * 4));
+
+    for (i = 0; i < 7; i++) {                                    /* predios proximos */
+        int idx = base + i;
+        unsigned h = hsh(idx * 5 + 2);
+        float bx = idx * 64 - par, bw = 44 + (h % 4) * 4, bh = 60 + ((h >> 3) % 5) * 10;
+        int cols = (int)((bw - 8) / 10), rows = (int)((bh - 14) / 12);
+        float top = 192 - bh;
+        ui(bx, top, bw, bh, RGB(24, 30, 78));
+        ui(bx, top, 2, bh, RGB(38, 46, 104));
+        ui(bx + bw - 2, top, 2, bh, RGB(16, 20, 58));
+        ui(bx, top, bw, 2, RGB(56, 70, 136));
+        switch ((h >> 8) % 4) {
+        case 0:                                                  /* caixa dagua */
+            ui(bx + 8, top - 12, 14, 10, RGB(30, 36, 90)); ui(bx + 6, top - 14, 18, 3, RGB(44, 52, 112));
+            ui(bx + 10, top - 2, 2, 2, RGB(20, 24, 66)); ui(bx + 18, top - 2, 2, 2, RGB(20, 24, 66));
+            break;
+        case 1:                                                  /* ar condicionado */
+            ui(bx + 10, top - 6, 14, 6, RGB(34, 42, 100)); ui(bx + 12, top - 5, 10, 1, RGB(60, 72, 130));
+            break;
+        case 2:                                                  /* antena com luz */
+            ui(bx + bw / 2, top - 14, 2, 14, RGB(30, 36, 90));
+            if (((frame / 25) + idx) % 2) ui(bx + bw / 2 - 1, top - 17, 4, 3, RGB(255, 70, 70));
+            break;
+        default: break;
+        }
+        for (j = 0; j < rows; j++)
+            for (k = 0; k < cols; k++) {
+                unsigned v = hsh(idx * 131 + j * 7 + k) % 100;
+                float wx = bx + 6 + k * 10, wy = top + 8 + j * 12;
+                if (v < 45 && !(v == 3 && (frame / 45) % 2)) {
+                    u64 wc = (v % 3 == 0) ? RGB(250, 230, 120) : (v % 3 == 1) ? RGB(255, 188, 96) : RGB(140, 215, 255);
+                    ui(wx, wy, 6, 6, wc);
+                    ui(wx, wy, 6, 1, RGB(255, 255, 220));
+                } else {
+                    ui(wx, wy, 6, 6, RGB(30, 38, 90));
+                    ui(wx, wy, 6, 1, RGB(40, 50, 108));
+                }
+            }
+    }
+
+    ui(0, 192, VW, 12, RGB(14, 12, 38));                         /* abismo dos buracos */
+    ui(0, 204, VW, 20, RGB(6, 6, 22));
 }
 
-static void draw_floor_strip(void)                               /* chao da tela de titulo */
+/* rua: calcada em cima, asfalto embaixo; blocos acima do chao = tijolos com laje */
+static void street_tile(float x, float y, int ty, unsigned h, int tx, int le, int re)
+{
+    if (ty == 12) {
+        put(x, y, TS, TS, RGB(98, 102, 140));
+        put(x, y, TS, 3, RGB(172, 180, 218));
+        put(x, y, TS, 1, RGB(222, 228, 252));
+        put(x, y + 3, TS, 1, RGB(124, 130, 172));
+        put(x, y + 9, TS, 1, RGB(78, 82, 116));
+        put(x + ((tx & 1) ? 5 : 11), y + 3, 1, 6, RGB(78, 82, 116));
+        put(x + ((tx & 1) ? 11 : 4), y + 10, 1, 3, RGB(78, 82, 116));
+        put(x, y + 13, TS, 3, RGB(60, 62, 96));
+        put(x, y + 13, TS, 1, RGB(120, 126, 168));
+        if ((h & 7) == 0) { put(x + 3, y + 5, 4, 1, RGB(124, 130, 172)); put(x + 6, y + 6, 3, 1, RGB(124, 130, 172)); }
+    } else {
+        put(x, y, TS, TS, RGB(44, 46, 74));
+        put(x, y, TS, 2, RGB(28, 30, 52));
+        if (tx % 2 == 0) put(x + 2, y + 7, 12, 2, RGB(214, 190, 86));
+        if ((h & 3) == 0) put(x + (h >> 4) % 12, y + 12, 2, 1, RGB(68, 70, 102));
+    }
+    if (le) put(x, y, 2, TS, RGB(26, 28, 52));
+    if (re) put(x + TS - 2, y, 2, TS, RGB(26, 28, 52));
+}
+
+static void draw_floor_strip(void)                               /* chao das telas de titulo/abertura */
 {
     int i;
-    ui(0, 192, VW, 32, RGB(84, 88, 122));
-    ui(0, 192, VW, 3, RGB(150, 160, 205));
-    ui(0, 192, VW, 1, RGB(205, 215, 250));
-    ui(0, 199, VW, 1, RGB(58, 60, 92));
-    ui(0, 206, VW, 18, RGB(70, 74, 106));
-    for (i = 0; i < 21; i++) ui(i * 16 + ((i & 1) ? 4 : 10), 195, 1, 4, RGB(58, 60, 92));
+    float oc = cam; int os = shake;
+    cam = 0; shake = 0;
+    for (i = 0; i < VW / TS + 1; i++) {
+        street_tile(i * TS, 192, 12, hsh(i * 31 + 84), i, 0, 0);
+        street_tile(i * TS, 208, 13, hsh(i * 31 + 91), i, 0, 0);
+    }
+    cam = oc; shake = os;
+}
+
+static void draw_lamps(void)                                     /* postes de luz atras do cenario */
+{
+    int k, k0 = (int)(cam / TS / 11) - 1;
+    for (k = k0; k <= k0 + 4; k++) {
+        int col = 6 + k * 11, j;
+        float x = col * TS + 8, hx = x + 12;
+        if (col < 1 || col >= MW - 2) continue;
+        if (tile_at(col, 12) != 1 || tile_at(col, 11) == 1 || tile_at(col + 1, 12) != 1) continue;
+        for (j = 0; j < 6; j++)                                  /* cone de luz */
+            put(hx - (4 + j * 4), 132 + j * 10, 8 + j * 8, 10, RGBA(255, 215, 130, 7));
+        put(hx - 24, 189, 48, 3, RGBA(255, 225, 140, 14));
+        put(x - 4, 186, 9, 6, RGB(34, 38, 68));                  /* base e poste */
+        put(x - 1, 126, 3, 62, RGB(40, 44, 76)); put(x - 1, 126, 1, 62, RGB(76, 84, 128));
+        put(x - 1, 124, 14, 3, RGB(40, 44, 76));                 /* braco */
+        put(x + 8, 125, 9, 4, RGB(74, 80, 124)); put(x + 8, 125, 9, 1, RGB(120, 128, 176));
+        put(x + 9, 129, 7, 2, RGB(255, 242, 180));               /* lampada */
+        glow(hx, 132, 20, 255, 205, 110, 9);
+    }
 }
 
 static void draw_tiles(void)
@@ -755,36 +912,60 @@ static void draw_tiles(void)
         for (ty = 0; ty < MH; ty++) {
             int t = map[ty][tx];
             float x = tx * TS, y = ty * TS;
-            if (t == 1) {
-                int alt = (tx + ty) & 1;
-                put(x, y, TS, TS, RGB(84, 88, 122));
-                put(x, y + 7, TS, 1, RGB(58, 60, 92));
-                put(x + (alt ? 4 : 10), y, 1, 7, RGB(58, 60, 92));
-                put(x + (alt ? 10 : 4), y + 8, 1, 6, RGB(58, 60, 92));
-                put(x, y + TS - 2, TS, 2, RGB(52, 54, 84));
-                if (tile_at(tx, ty - 1) != 1) {
-                    put(x, y, TS, 3, RGB(150, 160, 205));
-                    put(x, y, TS, 1, RGB(205, 215, 250));
+            unsigned h = hsh(tx * 31 + ty * 7);
+            if (t == 1 && ty >= 12) {
+                street_tile(x, y, ty, h, tx, tile_at(tx - 1, ty) != 1, tile_at(tx + 1, ty) != 1);
+            } else if (t == 1) {                                 /* tijolos */
+                put(x, y, TS, TS, RGB(104, 62, 78));
+                put(x, y + 7, TS, 1, RGB(58, 32, 46)); put(x, y + 15, TS, 1, RGB(58, 32, 46));
+                put(x + 7, y, 1, 7, RGB(58, 32, 46)); put(x + 15, y, 1, 7, RGB(58, 32, 46));
+                put(x + 3, y + 8, 1, 7, RGB(58, 32, 46)); put(x + 11, y + 8, 1, 7, RGB(58, 32, 46));
+                put(x, y, 7, 1, RGB(138, 88, 100)); put(x + 8, y, 7, 1, RGB(138, 88, 100));
+                put(x, y + 8, 3, 1, RGB(138, 88, 100)); put(x + 4, y + 8, 7, 1, RGB(138, 88, 100));
+                put(x + 12, y + 8, 3, 1, RGB(138, 88, 100));
+                if ((h & 3) == 0) put(x + 8, y + 1, 7, 6, RGB(90, 52, 68));
+                else if ((h & 3) == 1) put(x + 4, y + 9, 7, 6, RGB(118, 72, 86));
+                if (tile_at(tx, ty - 1) != 1) {                  /* laje no topo */
+                    put(x, y, TS, 4, RGB(150, 154, 192));
+                    put(x, y, TS, 1, RGB(218, 224, 250));
+                    put(x, y + 4, TS, 1, RGB(66, 68, 104));
                 }
-            } else if (t == 2) {
-                put(x, y + 12, TS, 4, RGB(90, 94, 110));
+                if (tile_at(tx - 1, ty) != 1) put(x, y + 1, 1, TS - 1, RGB(176, 124, 134));
+                if (tile_at(tx + 1, ty) != 1) put(x + TS - 1, y + 1, 1, TS - 1, RGB(50, 26, 38));
+            } else if (t == 2) {                                 /* espinhos metalicos */
+                put(x, y + 12, TS, 4, RGB(74, 64, 90));
+                put(x, y + 12, TS, 1, RGB(124, 112, 146));
+                put(x + 2, y + 14, 2, 1, RGB(214, 60, 70)); put(x + 12, y + 14, 2, 1, RGB(214, 60, 70));
                 for (k = 0; k < 4; k++) {
-                    put(x + k * 4, y + 8, 4, 4, RGB(170, 175, 195));
-                    put(x + k * 4 + 1, y + 5, 2, 3, RGB(205, 210, 228));
-                    put(x + k * 4 + 1, y + 2, 2, 3, RGB(255, 255, 255));
+                    put(x + k * 4, y + 8, 4, 4, RGB(150, 158, 186));
+                    put(x + k * 4, y + 8, 1, 4, RGB(104, 110, 140));
+                    put(x + k * 4 + 1, y + 5, 2, 3, RGB(196, 204, 226));
+                    put(x + k * 4 + 1, y + 2, 2, 3, RGB(240, 244, 255));
+                    put(x + k * 4 + 1, y + 1, 2, 1, RGB(255, 110, 110));
                 }
             }
         }
 }
 
+static void vignette(void)                                       /* escurece os cantos da tela */
+{
+    int k;
+    for (k = 0; k < 6; k++) {
+        float w = 4 + k * 4;
+        ui(0, 0, w, VH, RGBA(0, 0, 16, 7)); ui(VW - w, 0, w, VH, RGBA(0, 0, 16, 7));
+        ui(0, 0, VW, w * 0.7f, RGBA(0, 0, 16, 6)); ui(0, VH - w * 0.7f, VW, w * 0.7f, RGBA(0, 0, 16, 6));
+    }
+}
+
 static void draw_king(float x, float y)                          /* Rei Leao, chefao final */
 {
     u64 line = RGB(30, 10, 10), armor = RGB(200, 150, 40), armor2 = RGB(150, 100, 20), hi = RGB(255, 225, 120);
-    u64 mane = RGB(210, 100, 20), mane2 = RGB(150, 60, 10), face = RGB(235, 180, 90), glow = RGB(120, 240, 255);
+    u64 mane = RGB(210, 100, 20), mane2 = RGB(150, 60, 10), face = RGB(235, 180, 90), gl = RGB(120, 240, 255);
     u64 cape = RGB(150, 20, 40), cape2 = RGB(110, 14, 30), dk = RGB(70, 40, 20);
     u64 skin = RGB(245, 200, 160), hair = RGB(60, 36, 24), dress = RGB(255, 140, 190), red = RGB(220, 50, 60);
     float gx = x - 16, gy = y + 20 + (((frame / 6) % 2) ? 1.0f : 0.0f);   /* a filha se debate */
 
+    shadow(x + 19, y + 56, 46);
     put(x + 30, y + 16, 12, 38, cape); put(x + 36, y + 20, 6, 34, cape2);  /* capa */
     put(x + 6, y + 42, 10, 12, armor2); put(x + 22, y + 42, 10, 12, armor2);  /* pernas */
     put(x + 4, y + 52, 13, 4, line); put(x + 21, y + 52, 13, 4, line);
@@ -792,7 +973,7 @@ static void draw_king(float x, float y)                          /* Rei Leao, ch
     put(x + 3, y + 19, 32, 24, armor);
     put(x + 5, y + 20, 12, 4, hi);
     put(x + 3, y + 36, 32, 3, armor2);
-    put(x + 15, y + 26, 8, 8, line); put(x + 16, y + 27, 6, 6, glow);
+    put(x + 15, y + 26, 8, 8, line); put(x + 16, y + 27, 6, 6, gl);
 
     put(gx + 1, gy, 10, 4, hair);                                          /* filha */
     put(gx - 1, gy + 3, 2, 6, hair); put(gx + 10, gy + 3, 2, 6, hair);
@@ -809,7 +990,8 @@ static void draw_king(float x, float y)                          /* Rei Leao, ch
     put(x + 8, y + 2, 22, 16, face);
     put(x + 8, y + 9, 10, 8, RGB(250, 215, 150));
     put(x + 9, y + 10, 4, 3, dk);
-    put(x + 14, y + 5, 5, 3, glow); put(x + 24, y + 5, 5, 3, glow);
+    put(x + 14, y + 5, 5, 3, gl); put(x + 24, y + 5, 5, 3, gl);
+    glow(x + 16.5f, y + 6.5f, 7, 120, 240, 255, 18); glow(x + 26.5f, y + 6.5f, 7, 120, 240, 255, 18);
     put(x + 10, y + 15, 8, 1, line);
     put(x + 8, y - 7, 22, 5, hi);                                          /* coroa */
     put(x + 8, y - 10, 3, 3, hi); put(x + 17, y - 11, 3, 4, hi); put(x + 27, y - 10, 3, 3, hi);
@@ -845,6 +1027,7 @@ static void draw_player(void)
     int lxa = 2, lxb = 6, ha = 6;
 
     if (p.inv > 0 && (frame / 3) % 2) return;
+    shadow(x + p.w / 2.0f, y + p.h, 14);
     if (p.charge >= CHARGE_FRAMES && (frame / 3) % 2) { body = RGB(255, 225, 90); light = RGB(255, 250, 200); }
     else if (p.charge > 20 && (frame / 6) % 2) { body = RGB(255, 150, 80); light = RGB(255, 205, 155); }
 
@@ -886,6 +1069,8 @@ static void draw_player(void)
     if (p.charge > 20) {                                         /* brilho da luva carregando */
         int full = (p.charge >= CHARGE_FRAMES);
         int sz = full ? 6 : 2 + (p.charge - 20) / 12;
+        float gx = (p.dir > 0) ? x + 17 + sz / 2.0f : x + 12 - 17 - sz / 2.0f;
+        glow(gx, y + 12 + bob, full ? 14 : 8, 80, 205, 255, full ? 18 : 12);
         PM(17, 12 + bob - sz / 2, sz, sz, (full && (frame / 2) % 2) ? RGB(255, 255, 255) : glove);
     }
 }
@@ -902,6 +1087,7 @@ static void draw_enemies(void)
         int d = e->dir, f = e->flash;
         u64 white = RGB(255, 255, 255);
         if (!e->active) continue;
+        shadow(x + e->w / 2.0f, y + e->h, e->w + 2);
 
         if (e->type == E_MET) {
             u64 c = f ? white : RGB(250, 200, 50), hi = f ? white : RGB(255, 238, 150);
@@ -932,6 +1118,7 @@ static void draw_enemies(void)
             put(x + 4, y, 2, 2, wc); put(x + 8, y, 2, 2, wc);
             put(x + 5, y + 3, 1, 2, RGB(255, 80, 80)); put(x + 8, y + 3, 1, 2, RGB(255, 80, 80));
             put(x + 6, y + 6, 1, 2, white); put(x + 7, y + 6, 1, 2, white);
+            glow(x + 6, y + 4, 5, 255, 60, 60, 16); glow(x + 9, y + 4, 5, 255, 60, 60, 16);
         } else {
             u64 c = f ? white : RGB(210, 50, 50), hi = f ? white : RGB(240, 110, 110);
             u64 dk = f ? white : RGB(120, 20, 20), hd = f ? white : RGB(160, 30, 30);
@@ -965,6 +1152,9 @@ static void draw_bullets_items(void)
         float s;
         if (!b->active) continue;
         s = (b->vx > 0) ? -1.0f : 1.0f;
+        if (b->own == 0 && b->dmg == 1) glow(b->x, b->y, 10, 255, 200, 80, 16);
+        else if (b->own == 0) glow(b->x, b->y, 18, 80, 200, 255, 16);
+        else glow(b->x, b->y, 10, 255, 90, 40, 16);
         if (b->own == 0 && b->dmg == 1) {
             put(b->x - 4, b->y - 3, 8, 6, RGB(200, 120, 30));
             put(b->x - 3, b->y - 2, 6, 4, RGB(255, 240, 120));
@@ -985,6 +1175,7 @@ static void draw_bullets_items(void)
     for (i = 0; i < MAX_ITEMS; i++)
         if (it[i].active) {
             float bob = ((frame / 10) % 2) ? 0.0f : -1.0f;
+            glow(it[i].x + 4, it[i].y + 4 + bob, 10, 120, 255, 150, 14);
             put(it[i].x - 1, it[i].y - 1 + bob, 10, 10, RGB(120, 20, 20));
             put(it[i].x, it[i].y + bob, 8, 8, RGB(255, 255, 255));
             put(it[i].x + 3, it[i].y + 1 + bob, 2, 6, RGB(230, 40, 40));
@@ -1001,42 +1192,84 @@ static void draw_bar(float x, int hp, u64 col, u64 hi)
     if (hp > 0) {
         ui(x, 8 + (MAXHP - hp) * 3, 6, hp * 3, col);
         ui(x, 8 + (MAXHP - hp) * 3, 2, hp * 3, hi);
+        ui(x + 5, 8 + (MAXHP - hp) * 3, 1, hp * 3, RGBA(0, 0, 0, 50));
     }
     for (i = 1; i < MAXHP; i++) ui(x, 8 + i * 3 - 1, 6, 1, RGB(0, 0, 0));
+}
+
+static void draw_head_icon(float x, float y)                     /* carinha do Max para as vidas */
+{
+    ui(x, y + 1, 11, 9, RGB(40, 22, 16));
+    ui(x + 1, y, 9, 4, RGB(210, 45, 55));
+    ui(x + 6, y + 3, 5, 1, RGB(150, 25, 35));
+    ui(x + 4, y + 4, 6, 5, RGB(245, 200, 160));
+    ui(x + 1, y + 4, 3, 5, RGB(60, 36, 24));
+    ui(x + 8, y + 5, 1, 2, RGB(40, 22, 16));
 }
 
 static void draw_hud(void)
 {
     char buf[32];
-    draw_bar(8, p.hp, RGB(250, 240, 130), RGB(255, 255, 220));
+    u64 col = RGB(250, 240, 130), hi = RGB(255, 255, 220);
+    if (p.hp <= 7) { col = ((frame / 6) % 2) ? RGB(255, 70, 70) : RGB(190, 40, 50); hi = RGB(255, 170, 170); }
+    else if (p.hp <= 14) { col = RGB(255, 160, 60); hi = RGB(255, 210, 150); }
+    draw_bar(8, p.hp, col, hi);
     if (bossActive) {
         int i, hp = 0;
         for (i = 0; i < MAX_ENEMIES; i++) if (en[i].active && en[i].type == E_BOSS) hp = en[i].hp;
         draw_bar(VW - 14, hp, RGB(255, 90, 90), RGB(255, 170, 170));
     }
-    snprintf(buf, sizeof(buf), "SCORE %d", score);
-    text_s(26, 8, buf, 2, RGB(255, 255, 255));
-    snprintf(buf, sizeof(buf), "VIDAS %d", p.lives);
-    text_s(26, 20, buf, 2, RGB(255, 255, 255));
+    ui(24, 5, 120, 33, RGBA(0, 0, 24, 100));                      /* painel translucido */
+    ui(24, 5, 120, 1, RGBA(150, 160, 205, 110)); ui(24, 37, 120, 1, RGBA(150, 160, 205, 110));
+    ui(24, 5, 1, 33, RGBA(150, 160, 205, 110)); ui(143, 5, 1, 33, RGBA(150, 160, 205, 110));
+    snprintf(buf, sizeof(buf), "SCORE %07d", score);
+    text_s(30, 9, buf, 2, RGB(255, 255, 255));
+    draw_head_icon(30, 24);
+    snprintf(buf, sizeof(buf), "X %d", p.lives);
+    text_s(46, 24, buf, 2, RGB(255, 255, 255));
+}
+
+static void logo(float y, const char *s, int sc)                 /* titulo com extrusao 3D */
+{
+    int k;
+    float x = (VW - ((int)strlen(s) * 4 * sc - sc)) / 2.0f;
+    for (k = 6; k >= 1; k--) text(x + k, y + k, s, sc, RGB(8 + k * 3, 18 + k * 6, 56 + k * 10));
+    text(x, y, s, sc, RGB(120, 230, 255));
+}
+
+static void draw_hero_title(float x)                             /* Max posando nas telas de titulo/abertura */
+{
+    Player sv = p;
+    float oc = cam; int os = shake;
+    cam = 0; shake = 0;
+    p.x = x; p.y = 172; p.w = 12; p.h = 20; p.dir = 1; p.ground = 1;
+    p.vx = 0; p.vy = 0; p.inv = 0; p.charge = 0;
+    draw_player();
+    p = sv; cam = oc; shake = os;
 }
 
 static void draw(void)
 {
     gsKit_clear(g, RGB(0, 0, 0));
+    gsKit_set_primalpha(g, GS_SETREG_ALPHA(0, 1, 0, 1, 0), 0);   /* mistura: Cs*As + Cd*(1-As) */
 
     if (state == ST_TITLE) {
         draw_background(frame * 0.7f);
         draw_floor_strip();
-        text_center(46, "REIS BOT", 6, RGB(120, 230, 255));
-        text_center(90, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
-        if ((frame / 30) % 2) text_center(140, "APERTE START", 3, RGB(250, 240, 130));
-        text_center(172, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
+        draw_hero_title(40);
+        logo(36, "REIS BOT", 6);
+        text_center(84, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
+        if ((frame / 30) % 2) text_center(126, "APERTE START", 3, RGB(250, 240, 130));
+        text_center(164, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
+        vignette();
     } else if (state == ST_INTRO) {
         draw_background(0);
         draw_floor_strip();
-        text_center(60, "PARTE 1", 6, RGB(250, 240, 130));
-        text_center(108, "A RUA", 3, RGB(255, 255, 255));
-        text_center(150, "CHEGUE ATE A PORTA DE SAIDA", 2, RGB(200, 200, 220));
+        draw_hero_title(40);
+        logo(52, "PARTE 1", 6);
+        text_center(100, "A RUA", 3, RGB(255, 255, 255));
+        text_center(140, "CHEGUE AO FIM DA RUA", 2, RGB(200, 200, 220));
+        vignette();
     } else if (state == ST_OVER) {
         draw_background(cam);
         panel(40, 56, 240, 148);
@@ -1054,13 +1287,19 @@ static void draw(void)
         if ((frame / 30) % 2) text_center(186, "START PARA JOGAR DE NOVO", 2, RGB(255, 255, 255));
     } else {
         draw_background(cam);
+        draw_lamps();
         draw_tiles();
         draw_enemies();
         draw_bullets_items();
         if (state == ST_CUT) draw_king(KING_X, cutBossY);
         draw_player();
         draw_parts();
-        if (state == ST_CUT) draw_subtitle(); else draw_hud();
+        vignette();
+        if (p.inv > 84) ui(0, 0, VW, VH, RGBA(255, 40, 40, 36));       /* piscada de dano */
+        if (state == ST_CUT) {                                          /* barras de cinema */
+            ui(0, 0, VW, 12, RGB(0, 0, 0)); ui(0, VH - 12, VW, 12, RGB(0, 0, 0));
+            draw_subtitle();
+        } else draw_hud();
         if (ready > 0 && (frame / 8) % 2) text_center(100, "READY", 4, RGB(255, 255, 255));
         if (paused) {
             panel(110, 90, 100, 36);
@@ -1106,6 +1345,7 @@ static void init_gs(void)
     g->PSMZ = GS_PSMZ_16S;
     g->DoubleBuffering = GS_SETTING_OFF;
     g->ZBuffering = GS_SETTING_OFF;
+    g->PrimAlphaEnable = GS_SETTING_ON;                      /* permite brilhos/sombras translucidos */
 
     dmaKit_init(D_CTRL_RELE_OFF, D_CTRL_MFD_OFF, D_CTRL_STS_UNSPEC,
                 D_CTRL_STD_OFF, D_CTRL_RCYC_8, 1 << DMA_CHANNEL_GIF);
