@@ -58,7 +58,7 @@
 #define RGB(r, g, b) GS_SETREG_RGBAQ((r), (g), (b), 0x80, 0x00)
 #define RGBA(r, g, b, a) GS_SETREG_RGBAQ((r), (g), (b), (a), 0x00)   /* a: 0..128 (128 = opaco) */
 
-enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT };
+enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT, ST_SELECT };
 enum { E_TATU, E_BATTON, E_BOSS, E_MINI };
 
 /* ---------- tipos ---------- */
@@ -85,11 +85,12 @@ static int state = ST_TITLE;
 enum { MN_MAIN, MN_OPT, MN_CRED, MN_PASS };
 static int menuScr = MN_MAIN, menuSel = 0;
 static int optVol = 8, optMus = 8, optSfx = 8;      /* volumes 0-10 (guardados; ligar ao audsrv quando houver som) */
-static int pwIdx[5] = {0, 0, 0, 0, 0}, pwPos = 0, pwErr = 0;   /* tela de senha */
+static int pwIdx[6] = {0, 0, 0, 0, 0, 0}, pwPos = 0, pwErr = 0;   /* tela de senha */
 static int optShake = 1, optVig = 1;                /* tremor de tela / vinheta ligados */
 static int paused = 0, ready = 0, frame = 0, score = 0;
 static int bossActive = 0, bossDeath = 0, shake = 0;
-static int partsDone = 0;                    /* partes concluidas (0 = nenhuma) */
+static int clearMask = 0, curStage = 0;      /* fases concluidas (1 bit por chefe) e fase atual */
+static int selCell = 1, selMsg = 0;          /* tela de selecao de chefe */
 static int saveStatus = 0, menuMsg = 0;     /* saveStatus: 0 nada, 1 salvo, 2 falhou; menuMsg: aviso no menu */
 static int hasDash = 0, dashMsg = 0;        /* dash: ganho ao derrotar o Capitao Lobo, permanente */
 static int miniState = 0, wallTip = 0;      /* mini-chefe: 0 nao comecou, 1 lutando, 2 derrotado */
@@ -433,7 +434,15 @@ static void respawn_player(void)
 
 static void new_game(void)
 {
-    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0; hasDash = 0; dashMsg = 0; partsDone = 0; saveStatus = 0;
+    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0; hasDash = 0; dashMsg = 0; clearMask = 0; saveStatus = 0;
+    selCell = 1; selMsg = 0; paused = 0;
+    state = ST_SELECT;                         /* novo jogo: escolhe o chefe */
+}
+
+static void start_stage(int st)                /* comeca a fase do chefe escolhido (mantem dash e progresso) */
+{
+    curStage = st; cpx = 3 * TS; saveStatus = 0;
+    if (p.lives < 1) p.lives = 3;
     respawn_player();
     state = ST_INTRO; introT = 150; paused = 0;
 }
@@ -856,9 +865,9 @@ static int read_save(void)                 /* 1 se leu um save valido (e aplica 
 /* fim de uma parte: mostra senha na tela de vitoria e salva o progresso no memory card */
 static void finish_part(void)
 {
-    partsDone = 1;
+    clearMask |= 1 << curStage;
     state = ST_WIN;
-    sd.parts = partsDone; sd.dash = hasDash; sd.lives = (p.lives < 1) ? 3 : p.lives; sd.score = score;
+    sd.parts = clearMask; sd.dash = hasDash; sd.lives = (p.lives < 1) ? 3 : p.lives; sd.score = score;
     saveStatus = write_save() ? 1 : 2;
 }
 
@@ -915,7 +924,7 @@ static void start_mini(void)
 
 /* ---------- senhas ---------- */
 /* a senha guarda: checkpoint (0-9), se tem o dash e vidas (1-8) */
-#define PW_LEN 5
+#define PW_LEN 6
 static const char pwChars[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   /* 32 simbolos (sem I, O, 0, 1) */
 static const int cpCols[10] = { 3, 84, 118, 157, 180, 200, 222, 237, 248, 285 };
 
@@ -926,32 +935,31 @@ static int cp_index(void)
     return 0;
 }
 
-static unsigned pw_hash(unsigned x) { return (x * 2654435761u + 0x1234567u) & 0x1FFFFFFu; }
-static unsigned pw_chk(unsigned d) { return (d * 73u + 41u) & 0xFFu; }
+static unsigned pw_hash(unsigned x) { return (x * 2654435761u + 0x1234567u) & 0x3FFFFFFFu; }   /* 30 bits = 6 simbolos */
+static unsigned pw_chk(unsigned d) { return (d * 40503u + 12345u) & 0xFFFu; }
 
-static void pw_make(char *out, int cp, int dash, int lives, int parts)
+/* d: checkpoint (4 bits) | dash (1) | vidas-1 (3) | fases concluidas (8) */
+static void pw_make(char *out, int cp, int dash, int lives, int mask)
 {
     unsigned d, h;
     int i;
     if (lives < 1) lives = 3;
     if (lives > 8) lives = 8;
-    if (parts < 0) parts = 0;
-    if (parts > 7) parts = 7;
-    d = (unsigned)cp | ((unsigned)(dash ? 1 : 0) << 4) | ((unsigned)(lives - 1) << 5) | ((unsigned)parts << 8);
-    h = pw_hash((d << 8) | pw_chk(d));
+    d = (unsigned)cp | ((unsigned)(dash ? 1 : 0) << 4) | ((unsigned)(lives - 1) << 5) | ((unsigned)(mask & 255) << 8);
+    h = pw_hash((d << 12) | pw_chk(d));
     for (i = 0; i < PW_LEN; i++) out[PW_LEN - 1 - i] = pwChars[(h >> (5 * i)) & 31];
     out[PW_LEN] = 0;
 }
 
-static int pw_decode(const int *idx, int *cp, int *dash, int *lives, int *parts)
+static int pw_decode(const int *idx, int *cp, int *dash, int *lives, int *mask)
 {
     unsigned h = 0, d;
     int i;
     for (i = 0; i < PW_LEN; i++) h = (h << 5) | (unsigned)idx[i];
-    for (d = 0; d < 2048; d++) {
+    for (d = 0; d < 65536; d++) {
         if ((d & 15) > 9) continue;
-        if (pw_hash((d << 8) | pw_chk(d)) == h) {
-            *cp = (int)(d & 15); *dash = (int)((d >> 4) & 1); *lives = (int)((d >> 5) & 7) + 1; *parts = (int)(d >> 8);
+        if (pw_hash((d << 12) | pw_chk(d)) == h) {
+            *cp = (int)(d & 15); *dash = (int)((d >> 4) & 1); *lives = (int)((d >> 5) & 7) + 1; *mask = (int)(d >> 8);
             return 1;
         }
     }
@@ -960,20 +968,18 @@ static int pw_decode(const int *idx, int *cp, int *dash, int *lives, int *parts)
 
 static void current_pw(char *out)
 {
-    pw_make(out, (state == ST_WIN) ? 0 : cp_index(), hasDash, p.lives, partsDone);
+    pw_make(out, (state == ST_WIN || state == ST_SELECT) ? 0 : cp_index(), hasDash, p.lives, clearMask);
 }
 
-static void load_password(int cp, int dash, int lives, int parts)
+static void load_password(int cp, int dash, int lives, int mask)
 {
     new_game();
-    hasDash = dash; dashMsg = 0;
-    cpx = (float)(cpCols[cp] * TS);
+    hasDash = dash; dashMsg = 0; clearMask = mask;
     p.lives = lives;
+    if (mask > 0) return;                    /* ja concluiu fases: volta para a selecao de chefe */
+    cpx = (float)(cpCols[cp] * TS);          /* senha no meio da fase: volta ao checkpoint */
     respawn_player();
-    if (parts > 0) {                         /* parte concluida: vai para a tela de fim de parte */
-        partsDone = parts; saveStatus = 0;
-        state = ST_WIN;
-    }
+    state = ST_INTRO; introT = 150;
 }
 
 /* ---------- menu do titulo ---------- */
@@ -998,8 +1004,8 @@ static void update_menu(unsigned pressed)
         if (pressed & PAD_UP) pwIdx[pwPos] = (pwIdx[pwPos] + 1) % 32;
         if (pressed & PAD_DOWN) pwIdx[pwPos] = (pwIdx[pwPos] + 31) % 32;
         if (ok) {
-            int cp, dash, lives, parts;
-            if (pw_decode(pwIdx, &cp, &dash, &lives, &parts)) load_password(cp, dash, lives, parts);
+            int cp, dash, lives, mask;
+            if (pw_decode(pwIdx, &cp, &dash, &lives, &mask)) load_password(cp, dash, lives, mask);
             else pwErr = 90;
         }
         return;
@@ -1028,6 +1034,38 @@ static void update_menu(unsigned pressed)
     }
 }
 
+/* ---------- selecao de chefe (estilo Mega Man) ---------- */
+static const int stageCell[8] = { 1, 0, 2, 3, 5, 6, 7, 8 };      /* celula da grade 3x3 de cada fase (4 = heroi) */
+
+static int cell_stage(int c)
+{
+    int i;
+    for (i = 0; i < 8; i++) if (stageCell[i] == c) return i;
+    return -1;
+}
+
+static void update_select(unsigned pressed)
+{
+    int r = selCell / 3, c = selCell % 3, nr = r, nc = c;
+    if (selMsg > 0) selMsg--;
+    if (pressed & PAD_LEFT) nc--;
+    if (pressed & PAD_RIGHT) nc++;
+    if (pressed & PAD_UP) nr--;
+    if (pressed & PAD_DOWN) nr++;
+    if (nr < 0 || nr > 2 || nc < 0 || nc > 2) { nr = r; nc = c; }
+    else if (nr * 3 + nc == 4) {                                 /* pula o heroi no centro */
+        nr += nr - r; nc += nc - c;
+        if (nr < 0 || nr > 2 || nc < 0 || nc > 2) { nr = r; nc = c; }
+    }
+    selCell = nr * 3 + nc;
+    if (pressed & PAD_CIRCLE) { state = ST_TITLE; menuScr = MN_MAIN; menuSel = 0; return; }
+    if (pressed & (PAD_CROSS | PAD_START)) {
+        int st = cell_stage(selCell);
+        if (st == 0) start_stage(0);
+        else selMsg = 60;
+    }
+}
+
 /* ---------- loop de logica ---------- */
 static void update(unsigned pad, unsigned pressed)
 {
@@ -1037,8 +1075,9 @@ static void update(unsigned pad, unsigned pressed)
         return;
     }
     if (state == ST_TITLE) { update_menu(pressed); return; }
+    if (state == ST_SELECT) { update_select(pressed); return; }
     if (state == ST_OVER || state == ST_WIN) {
-        if (pressed & PAD_START) new_game();
+        if (pressed & PAD_START) { selCell = 1; selMsg = 0; state = ST_SELECT; }   /* volta a escolher o chefe */
         return;
     }
     if (state == ST_CUT) { update_cut(pressed); goto camera; }
@@ -2327,7 +2366,7 @@ static void draw_menu(void)
         panel(40, 50, 240, 130);
         text_center(58, "SENHA", 4, RGB(120, 230, 255));
         for (i = 0; i < PW_LEN; i++) {
-            float x = 78 + i * 34;
+            float x = 62 + i * 34;
             char ch[2];
             ch[0] = pwChars[pwIdx[i]]; ch[1] = 0;
             ui(x - 2, 96, 32, 34, (i == pwPos) ? RGB(250, 240, 130) : RGB(70, 76, 130));
@@ -2361,6 +2400,40 @@ static void draw_menu(void)
     }
 }
 
+static void draw_select(void)
+{
+    static const char *const stageName[8] = { "A RUA - CAPITAO LOBO", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE", "EM BREVE" };
+    int c, st;
+    float oc = cam; int os = shake;
+    draw_space_bg();
+    cam = 0; shake = 0;
+    text_center(8, "ESCOLHA O CHEFE", 3, RGB(250, 240, 130));
+    for (c = 0; c < 9; c++) {
+        float x = 48 + (c % 3) * 80, y = 32 + (c / 3) * 56;
+        int sel = (c == selCell);
+        u64 border = sel ? (((frame / 6) % 2) ? RGB(250, 240, 130) : RGB(255, 255, 255)) : RGB(70, 76, 130);
+        st = cell_stage(c);
+        ui(x - 3, y - 3, 70, 58, border);
+        ui(x, y, 64, 52, (c == 4 || st == 0) ? RGB(16, 18, 56) : RGB(10, 10, 24));
+        if (c == 4) {                                              /* heroi no centro */
+            spr(&spr_max_idle, x + 32 - 10, y + 13, 0, 0);
+        } else if (st == 0) {                                      /* Capitao Lobo da fase A Rua */
+            spr(&spr_wolf, x + 32 - 18, y + 52 - 47, 0, 0);
+            if (clearMask & 1) text_s(x + 2, y + 2, "FEITO", 1, RGB(120, 255, 150));
+        } else {
+            text_s(x + 26, y + 16, "?", 4, RGB(90, 94, 130));
+            ui(x, y, 64, 52, RGBA(0, 0, 0, 90));
+        }
+    }
+    {
+        int cs = cell_stage(selCell);
+        if (cs >= 0) text_center(204, stageName[cs], 2, (cs == 0) ? RGB(255, 255, 255) : RGB(150, 154, 190));
+        if (selMsg > 0) text_center(190, "AINDA NAO DISPONIVEL", 2, RGB(255, 90, 90));
+    }
+    cam = oc; shake = os;
+    vignette();
+}
+
 static void draw(void)
 {
     gsKit_clear(g, RGB(0, 0, 0));
@@ -2385,6 +2458,8 @@ static void draw(void)
         text_center(100, "A RUA", 3, RGB(255, 255, 255));
         text_center(140, "CHEGUE AO FIM DA RUA", 2, RGB(200, 200, 220));
         vignette();
+    } else if (state == ST_SELECT) {
+        draw_select();
     } else if (state == ST_OVER) {
         draw_background(cam);
         panel(40, 56, 240, 148);
@@ -2392,18 +2467,18 @@ static void draw(void)
         { char pw[PW_LEN + 1]; current_pw(pw); text_center(108, "SENHA", 2, RGB(200, 200, 220)); text_center(122, pw, 3, RGB(250, 240, 130)); }
         text_center(144, "SCORE", 2, RGB(255, 255, 255));
         { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(160, b, 3, RGB(250, 240, 130)); }
-        if ((frame / 30) % 2) text_center(186, "START PARA TENTAR DE NOVO", 2, RGB(255, 255, 255));
+        if ((frame / 30) % 2) text_center(186, "START ESCOLHE O CHEFE", 2, RGB(255, 255, 255));
     } else if (state == ST_WIN) {
         draw_background(cam);
         panel(40, 56, 240, 148);
-        { char t[24]; snprintf(t, sizeof(t), "PARTE %d COMPLETA", partsDone); text_center(62, t, 3, RGB(120, 230, 255)); }
+        { char t[24]; snprintf(t, sizeof(t), "FASE %d COMPLETA", curStage + 1); text_center(62, t, 3, RGB(120, 230, 255)); }
         text_center(90, "SCORE", 2, RGB(255, 255, 255));
         { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(102, b, 3, RGB(250, 240, 130)); }
         { char pw[PW_LEN + 1]; current_pw(pw); text_center(128, "SENHA", 2, RGB(200, 200, 220)); text_center(140, pw, 3, RGB(250, 240, 130)); }
         if (saveStatus == 1) text_center(160, "JOGO SALVO NO MEMORY CARD", 1, RGB(120, 255, 150));
         else if (saveStatus == 2) text_center(160, "NAO FOI POSSIVEL SALVAR", 1, RGB(255, 120, 120));
-        text_center(172, "PARTE 2 EM BREVE", 2, RGB(120, 230, 255));
-        if ((frame / 30) % 2) text_center(190, "START PARA JOGAR DE NOVO", 2, RGB(255, 255, 255));
+        text_center(172, "OUTROS CHEFES EM BREVE", 2, RGB(120, 230, 255));
+        if ((frame / 30) % 2) text_center(190, "START ESCOLHE O CHEFE", 2, RGB(255, 255, 255));
     } else {
         draw_background(cam);
         draw_lamps();

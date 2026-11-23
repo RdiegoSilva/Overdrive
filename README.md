@@ -25,15 +25,19 @@ make clean
 Tela de título com **Iniciar**, **Senha**, **Opções** e **Créditos** (cima/baixo escolhe, X ou Start confirma, Círculo volta).
 Opções: volume geral, música, efeitos (guardados, prontos para ligar ao áudio), tremor de tela e vinheta (ligar/desligar).
 
+## Seleção de chefe
+
+Ao começar (Iniciar), o jogo abre uma tela de **seleção de chefe estilo Mega Man**: grade 3x3 com o herói no centro. Por enquanto só o **Capitão Lobo** (fase "A Rua") está disponível; as outras 7 vagas aparecem com "?" e "EM BREVE". Depois de vencer uma fase ela fica marcada como **FEITO** e você volta para essa tela (também após Game Over). D-pad move, X ou Start escolhe, Círculo volta ao menu.
+
 ## Fim de parte, senha e save
 
-Ao terminar cada parte aparece a tela de conclusão com a **senha** e o jogo é **salvo no memory card** (slot 1, pasta `REISBOT`). No menu, **Continuar** carrega o save. As opções (volume etc.) também são gravadas ao sair do menu Opções.
+Ao terminar cada fase aparece a tela de conclusão com a **senha** e o jogo é **salvo no memory card** (slot 1, pasta `REISBOT`). No menu, **Continuar** carrega o save. As opções (volume etc.) também são gravadas ao sair do menu Opções.
 
 Para compilar é preciso linkar a libmc: adicione `-lmc` em `EE_LIBS` no Makefile.
 
 ## Senhas
 
-A senha de 5 letras/números aparece na **pausa** e no **Game Over**. Ela guarda a parte concluída, o checkpoint, as vidas (1 a 8) e se você já tem o dash (Capitão Lobo derrotado). Digite em **Senha** no menu: cima/baixo muda o caractere, esquerda/direita troca a posição, X ou Start confirma. O score não é guardado.
+A senha de letras/números aparece na **pausa** e no **Game Over**. Ela tem 6 caracteres e guarda as fases concluídas, o checkpoint, as vidas (1 a 8) e se você já tem o dash (Capitão Lobo derrotado). Digite em **Senha** no menu: cima/baixo muda o caractere, esquerda/direita troca a posição, X ou Start confirma. O score não é guardado.
 
 ## O que tem
 
