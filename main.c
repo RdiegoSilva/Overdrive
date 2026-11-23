@@ -845,6 +845,42 @@ static void draw_background(float c)
             }
     }
 
+    {                                                            /* cerca viva atras do piso */
+        float par3 = c * 0.8f;
+        int b0 = (int)(par3 / 22);
+        for (i = 0; i < 17; i++) {
+            int idx = b0 + i;
+            unsigned hh = hsh(idx * 9 + 5);
+            float bx = idx * 22 - par3 + 11, rr = 8 + (hh % 4);
+            for (k = 0; k < (int)rr; k += 2) {
+                float dy = rr - k, hw = sqrtf(rr * rr - dy * dy);
+                ui(bx - hw, 192 - rr + k, 2 * hw, 2, RGB(24, 74, 58));
+                if (k >= 2) ui(bx - hw + 2, 192 - rr + k, hw * 1.1f, 2, RGB(40, 112, 82));
+            }
+            ui(bx - 5, 192 - rr + 1, 3, 1, RGB(92, 170, 116));
+        }
+    }
+    {                                                            /* viga metalica no alto */
+        float gp = c * 0.3f;
+        int g0 = (int)(gp / 48);
+        ui(0, 0, VW, 13, RGB(70, 48, 128));
+        ui(0, 0, VW, 2, RGB(152, 120, 216));
+        ui(0, 11, VW, 2, RGB(40, 26, 84));
+        ui(0, 13, VW, 2, RGBA(10, 6, 30, 70));
+        for (i = 0; i < 9; i++) {
+            int idx = g0 + i;
+            float gx = idx * 48 - gp;
+            ui(gx, 2, 2, 9, RGB(40, 26, 84)); ui(gx + 2, 2, 1, 9, RGB(110, 84, 176));
+            ui(gx + 10, 4, 6, 6, RGB(20, 60, 50)); ui(gx + 11, 5, 4, 4, RGB(80, 230, 140));
+            ui(gx + 22, 4, 6, 6, RGB(20, 60, 50)); ui(gx + 23, 5, 4, 4, RGB(80, 230, 140));
+            if (idx % 3 == 0)
+                for (k = 0; k < 26; k++) {
+                    ui(gx + k * 2, 13 + k, 6, 2, RGB(58, 40, 108));
+                    ui(gx + k * 2, 13 + k, 6, 1, RGB(110, 84, 176));
+                }
+        }
+    }
+
     ui(0, 192, VW, 12, RGB(14, 12, 38));                         /* abismo dos buracos */
     ui(0, 204, VW, 20, RGB(6, 6, 22));
 }
@@ -852,25 +888,38 @@ static void draw_background(float c)
 /* rua: calcada em cima, asfalto embaixo; blocos acima do chao = tijolos com laje */
 static void street_tile(float x, float y, int ty, unsigned h, int tx, int le, int re)
 {
-    if (ty == 12) {
-        put(x, y, TS, TS, RGB(98, 102, 140));
-        put(x, y, TS, 3, RGB(172, 180, 218));
-        put(x, y, TS, 1, RGB(222, 228, 252));
-        put(x, y + 3, TS, 1, RGB(124, 130, 172));
-        put(x, y + 9, TS, 1, RGB(78, 82, 116));
-        put(x + ((tx & 1) ? 5 : 11), y + 3, 1, 6, RGB(78, 82, 116));
-        put(x + ((tx & 1) ? 11 : 4), y + 10, 1, 3, RGB(78, 82, 116));
-        put(x, y + 13, TS, 3, RGB(60, 62, 96));
-        put(x, y + 13, TS, 1, RGB(120, 126, 168));
-        if ((h & 7) == 0) { put(x + 3, y + 5, 4, 1, RGB(124, 130, 172)); put(x + 6, y + 6, 3, 1, RGB(124, 130, 172)); }
-    } else {
-        put(x, y, TS, TS, RGB(44, 46, 74));
-        put(x, y, TS, 2, RGB(28, 30, 52));
-        if (tx % 2 == 0) put(x + 2, y + 7, 12, 2, RGB(214, 190, 86));
-        if ((h & 3) == 0) put(x + (h >> 4) % 12, y + 12, 2, 1, RGB(68, 70, 102));
+    int k;
+    if (ty == 12) {                                              /* piso metalico: faixa xadrez em cima */
+        for (k = 0; k < 2; k++) {
+            u64 A = RGB(176, 232, 128), B = RGB(46, 110, 74);
+            int odd = (tx * 2 + k) & 1;
+            put(x + k * 8, y, 8, 2, odd ? A : B);
+            put(x + k * 8, y + 2, 8, 2, odd ? B : A);
+        }
+        put(x, y + 4, TS, 1, RGB(214, 252, 176));
+        put(x, y + 5, TS, 8, RGB(64, 146, 98));
+        put(x, y + 5, TS, 1, RGB(112, 192, 134));
+        put(x, y + 9, TS, 1, RGB(44, 108, 72));
+        put(x, y + 13, TS, 3, RGB(34, 82, 62));
+        put(x, y + 13, TS, 1, RGB(88, 168, 116));
+        put(x, y + 5, 1, 11, RGB(40, 98, 68));
+        put(x + 11, y + 6, 2, 2, RGB(172, 230, 178)); put(x + 12, y + 7, 1, 1, RGB(40, 98, 68));
+        put(x + 11, y + 10, 2, 2, RGB(172, 230, 178)); put(x + 12, y + 11, 1, 1, RGB(40, 98, 68));
+    } else {                                                     /* painel grande rebaixado (2 tiles) */
+        int left = ((tx & 1) == 0);
+        put(x, y, TS, TS, RGB(52, 122, 86));
+        put(x, y, TS, 1, RGB(22, 58, 46));
+        put(x, y + 1, TS, 1, RGB(92, 170, 122));
+        put(left ? x + 2 : x, y + 4, TS - 2, 9, RGB(40, 100, 70));
+        put(left ? x + 2 : x, y + 4, TS - 2, 1, RGB(26, 70, 52));
+        put(left ? x + 2 : x, y + 12, TS - 2, 1, RGB(104, 180, 130));
+        if (left) { put(x + 2, y + 4, 1, 9, RGB(26, 70, 52)); put(x + 1, y + 4, 1, 9, RGB(104, 180, 130)); }
+        else      { put(x + TS - 3, y + 4, 1, 9, RGB(104, 180, 130)); put(x + TS - 2, y + 4, 1, 9, RGB(26, 70, 52)); }
+        put(x, y + 14, TS, 2, RGB(30, 76, 58));
+        if ((h & 3) == 0) put(x + 5, y + 7, 6, 2, RGB(52, 122, 86));
     }
-    if (le) put(x, y, 2, TS, RGB(26, 28, 52));
-    if (re) put(x + TS - 2, y, 2, TS, RGB(26, 28, 52));
+    if (le) put(x, y, 2, TS, RGB(22, 54, 44));
+    if (re) put(x + TS - 2, y, 2, TS, RGB(22, 54, 44));
 }
 
 static void draw_floor_strip(void)                               /* chao das telas de titulo/abertura */
@@ -915,23 +964,24 @@ static void draw_tiles(void)
             unsigned h = hsh(tx * 31 + ty * 7);
             if (t == 1 && ty >= 12) {
                 street_tile(x, y, ty, h, tx, tile_at(tx - 1, ty) != 1, tile_at(tx + 1, ty) != 1);
-            } else if (t == 1) {                                 /* tijolos */
-                put(x, y, TS, TS, RGB(104, 62, 78));
-                put(x, y + 7, TS, 1, RGB(58, 32, 46)); put(x, y + 15, TS, 1, RGB(58, 32, 46));
-                put(x + 7, y, 1, 7, RGB(58, 32, 46)); put(x + 15, y, 1, 7, RGB(58, 32, 46));
-                put(x + 3, y + 8, 1, 7, RGB(58, 32, 46)); put(x + 11, y + 8, 1, 7, RGB(58, 32, 46));
-                put(x, y, 7, 1, RGB(138, 88, 100)); put(x + 8, y, 7, 1, RGB(138, 88, 100));
-                put(x, y + 8, 3, 1, RGB(138, 88, 100)); put(x + 4, y + 8, 7, 1, RGB(138, 88, 100));
-                put(x + 12, y + 8, 3, 1, RGB(138, 88, 100));
-                if ((h & 3) == 0) put(x + 8, y + 1, 7, 6, RGB(90, 52, 68));
-                else if ((h & 3) == 1) put(x + 4, y + 9, 7, 6, RGB(118, 72, 86));
-                if (tile_at(tx, ty - 1) != 1) {                  /* laje no topo */
-                    put(x, y, TS, 4, RGB(150, 154, 192));
-                    put(x, y, TS, 1, RGB(218, 224, 250));
-                    put(x, y + 4, TS, 1, RGB(66, 68, 104));
+            } else if (t == 1) {                                 /* caixote de metal rebitado */
+                put(x, y, TS, TS, RGB(86, 88, 152));
+                put(x, y, TS, 1, RGB(170, 174, 232)); put(x, y, 1, TS, RGB(170, 174, 232));
+                put(x, y + TS - 1, TS, 1, RGB(36, 38, 86)); put(x + TS - 1, y, 1, TS, RGB(36, 38, 86));
+                put(x + 1, y + 1, TS - 2, 1, RGB(124, 128, 198)); put(x + 1, y + 1, 1, TS - 2, RGB(124, 128, 198));
+                put(x + 2, y + TS - 2, TS - 3, 1, RGB(58, 60, 118)); put(x + TS - 2, y + 2, 1, TS - 3, RGB(58, 60, 118));
+                put(x + 4, y + 4, TS - 8, TS - 8, RGB(70, 72, 134));
+                put(x + 4, y + 4, TS - 8, 1, RGB(46, 48, 98)); put(x + 4, y + 4, 1, TS - 8, RGB(46, 48, 98));
+                put(x + 4, y + TS - 5, TS - 8, 1, RGB(118, 122, 192)); put(x + TS - 5, y + 4, 1, TS - 8, RGB(118, 122, 192));
+                if ((h & 7) == 0)                                /* painel com listras de alerta */
+                    for (k = 0; k < 4; k++) put(x + 5 + k * 2, y + 5, 1, TS - 10, RGB(240, 176, 40));
+                put(x + 2, y + 2, 2, 2, RGB(210, 214, 252)); put(x + TS - 4, y + 2, 2, 2, RGB(210, 214, 252));
+                put(x + 2, y + TS - 4, 2, 2, RGB(210, 214, 252)); put(x + TS - 4, y + TS - 4, 2, 2, RGB(210, 214, 252));
+                if (tile_at(tx, ty - 1) != 1) {                  /* tampa no topo */
+                    put(x, y, TS, 3, RGB(198, 202, 246));
+                    put(x, y, TS, 1, RGB(244, 246, 255));
+                    put(x, y + 3, TS, 1, RGB(58, 60, 120));
                 }
-                if (tile_at(tx - 1, ty) != 1) put(x, y + 1, 1, TS - 1, RGB(176, 124, 134));
-                if (tile_at(tx + 1, ty) != 1) put(x + TS - 1, y + 1, 1, TS - 1, RGB(50, 26, 38));
             } else if (t == 2) {                                 /* espinhos metalicos */
                 put(x, y + 12, TS, 4, RGB(74, 64, 90));
                 put(x, y + 12, TS, 1, RGB(124, 112, 146));
@@ -1012,69 +1062,396 @@ static void draw_subtitle(void)
     if ((frame / 20) % 2) text(284, 74, "X", 2, RGB(250, 240, 130));
 }
 
-#define PM(lx, ly, rw, rh, c) mput(x, 12, p.dir, (lx), y + (ly), (rw), (rh), (c))
+/* ---------- sprites em pixel art (gerados) ---------- */
+typedef struct { int w, h; const char *const *rows; } Spr;
+
+static const char *const spr_max_idle_r[26] = {
+    "......KKKKKK........",
+    ".....KRRRhhRK.......",
+    "....KRRRhRRRRRK.....",
+    "....KRRRRRRRRRRKKK..",
+    "....KrrrrrrrrrrRRRK.",
+    "...KBBBsSSSSBBSKKKK.",
+    "...KBBBsSSSSSSESK...",
+    "...KBBBsSSSSSSESK...",
+    "....KBBsSSSSSSMSK...",
+    ".....KssSSSSSSSK....",
+    "......KKYYYYYKKKKKK.",
+    ".....KYYYYYYYYKKKKK.",
+    ".....KYOOOOOOOOcCCgK",
+    ".....KOOOYYOooocCCCK",
+    ".....KOOOooOooocccKK",
+    ".....KoOOOOOoooKKKK.",
+    "......KooooooKK.....",
+    "......KJJJJJJK......",
+    "......KJJlJJjK......",
+    "......KJJKKJjK......",
+    "......KJJK.KjK......",
+    "......KJJK.KjK......",
+    ".....KWWWK.KWWK.....",
+    ".....KWwwK.KwwK.....",
+    ".....KkkkK.KkkkK....",
+    "......KKK...KKK.....",
+};
+static const Spr spr_max_idle = { 20, 26, spr_max_idle_r };
+
+static const char *const spr_max_run0_r[26] = {
+    "......KKKKKK........",
+    ".....KRRRhhRK.......",
+    "....KRRRhRRRRRK.....",
+    "....KRRRRRRRRRRKKK..",
+    "....KrrrrrrrrrrRRRK.",
+    "...KBBBsSSSSBBSKKKK.",
+    "...KBBBsSSSSSSESK...",
+    "...KBBBsSSSSSSESK...",
+    "....KBBsSSSSSSMSK...",
+    ".....KssSSSSSSSK....",
+    "......KKYYYYYKKKKKK.",
+    ".....KYYYYYYYYKKKKK.",
+    ".....KYOOOOOOOOcCCgK",
+    ".....KOOOYYOooocCCCK",
+    ".....KOOOooOooocccKK",
+    ".....KoOOOOOoooKKKK.",
+    "......KooooooKK.....",
+    "......KJJJJJJK......",
+    ".....KJJlJJjjK......",
+    "....KJJJKKjjjK......",
+    "...KJJJK..KjjK......",
+    "..KWWWK...KjjK......",
+    "..KWwwK...KWWWK.....",
+    "..KkkK....KWwwK.....",
+    "...KK.....KkkkK.....",
+    "...........KKK......",
+};
+static const Spr spr_max_run0 = { 20, 26, spr_max_run0_r };
+
+static const char *const spr_max_run1_r[26] = {
+    "......KKKKKK........",
+    ".....KRRRhhRK.......",
+    "....KRRRhRRRRRK.....",
+    "....KRRRRRRRRRRKKK..",
+    "....KrrrrrrrrrrRRRK.",
+    "...KBBBsSSSSBBSKKKK.",
+    "...KBBBsSSSSSSESK...",
+    "...KBBBsSSSSSSESK...",
+    "....KBBsSSSSSSMSK...",
+    ".....KssSSSSSSSK....",
+    "......KKYYYYYKKKKKK.",
+    ".....KYYYYYYYYKKKKK.",
+    ".....KYOOOOOOOOcCCgK",
+    ".....KOOOYYOooocCCCK",
+    ".....KOOOooOooocccKK",
+    ".....KoOOOOOoooKKKK.",
+    "......KooooooKK.....",
+    "......KJJJJJJK......",
+    "......KJJlJJjK......",
+    ".....KJJKKJjjK......",
+    ".....KJJK.KjjK......",
+    ".....KJJK..KjjK.....",
+    "....KWWWK..KWWK.....",
+    "....KWwwK..KwwK.....",
+    "....KkkkK..KkkK.....",
+    ".....KKK....KK......",
+};
+static const Spr spr_max_run1 = { 20, 26, spr_max_run1_r };
+
+static const char *const spr_max_run2_r[26] = {
+    "......KKKKKK........",
+    ".....KRRRhhRK.......",
+    "....KRRRhRRRRRK.....",
+    "....KRRRRRRRRRRKKK..",
+    "....KrrrrrrrrrrRRRK.",
+    "...KBBBsSSSSBBSKKKK.",
+    "...KBBBsSSSSSSESK...",
+    "...KBBBsSSSSSSESK...",
+    "....KBBsSSSSSSMSK...",
+    ".....KssSSSSSSSK....",
+    "......KKYYYYYKKKKKK.",
+    ".....KYYYYYYYYKKKKK.",
+    ".....KYOOOOOOOOcCCgK",
+    ".....KOOOYYOooocCCCK",
+    ".....KOOOooOooocccKK",
+    ".....KoOOOOOoooKKKK.",
+    "......KooooooKK.....",
+    "......KJJJJJJK......",
+    ".....KJJlJJjjK......",
+    "......KJJKKjjjK.....",
+    "......KJJK.KjjjK....",
+    "......KJJK..KWWWK...",
+    ".....KWWWK..KWwwK...",
+    ".....KWwwK...KkkK...",
+    ".....KkkkK....KK....",
+    "......KKK...........",
+};
+static const Spr spr_max_run2 = { 20, 26, spr_max_run2_r };
+
+static const char *const spr_max_jump_r[26] = {
+    "......KKKKKK........",
+    ".....KRRRhhRK.......",
+    "....KRRRhRRRRRK.....",
+    "....KRRRRRRRRRRKKK..",
+    "....KrrrrrrrrrrRRRK.",
+    "...KBBBsSSSSBBSKKKK.",
+    "...KBBBsSSSSSSESK...",
+    "...KBBBsSSSSSSESK...",
+    "....KBBsSSSSSSMSK...",
+    ".....KssSSSSSSSK....",
+    "......KKYYYYYKKKKKK.",
+    ".....KYYYYYYYYKKKKK.",
+    ".....KYOOOOOOOOcCCgK",
+    ".....KOOOYYOooocCCCK",
+    ".....KOOOooOooocccKK",
+    ".....KoOOOOOoooKKKK.",
+    "......KooooooKK.....",
+    "......KJJJJJJK......",
+    ".....KJJlJJjjK......",
+    "....KJJJKKjjjjK.....",
+    "...KJJJK..KjjjK.....",
+    "..KWWWK....KWWK.....",
+    "..KWwwK....KwwK.....",
+    "..KkkkK....KkkK.....",
+    "...KKK......KK......",
+    "....................",
+};
+static const Spr spr_max_jump = { 20, 26, spr_max_jump_r };
+
+static const char *const spr_met_walk0_r[16] = {
+    "....KKKKKKKK....",
+    "...KaeeeaaaabK..",
+    "..KaeeaaaaaaabK.",
+    ".KaeeaaaaaaaaabK",
+    "KaeaaaaaaaaaaabK",
+    "KaaaaaaaaaaaabbK",
+    "KabbbbbbbbbbbbdK",
+    "KddddddddddddddK",
+    ".KffffffffffffK.",
+    ".KfWWffffffWWfK.",
+    ".KfWEffffffWEfK.",
+    ".KffffffffffffK.",
+    "...KKKKKKKKKK...",
+    "..KbbbK..KbbbK..",
+    "..KKKKK..KKKKK..",
+    "................",
+};
+static const Spr spr_met_walk0 = { 16, 16, spr_met_walk0_r };
+
+static const char *const spr_met_walk1_r[16] = {
+    "....KKKKKKKK....",
+    "...KaeeeaaaabK..",
+    "..KaeeaaaaaaabK.",
+    ".KaeeaaaaaaaaabK",
+    "KaeaaaaaaaaaaabK",
+    "KaaaaaaaaaaaabbK",
+    "KabbbbbbbbbbbbdK",
+    "KddddddddddddddK",
+    ".KffffffffffffK.",
+    ".KfWWffffffWWfK.",
+    ".KfWEffffffWEfK.",
+    ".KffffffffffffK.",
+    "...KKKKKKKKKK...",
+    "...KbbbK.KbbbK..",
+    "...KKKKK.KKKKK..",
+    "................",
+};
+static const Spr spr_met_walk1 = { 16, 16, spr_met_walk1_r };
+
+static const char *const spr_met_hide_r[16] = {
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "....KKKKKKKK....",
+    "...KaeeeaaaabK..",
+    "..KaeeaaaaaaabK.",
+    ".KaeeaaaaaaaaabK",
+    "KaeaaaaaaaaaaabK",
+    "KaaaaaaaaaaaabbK",
+    "KabbbbbbbbbbbbdK",
+    "KddddddddddddddK",
+    ".KKKKKKKKKKKKKK.",
+};
+static const Spr spr_met_hide = { 16, 16, spr_met_hide_r };
+
+static const char *const spr_bat_up_r[10] = {
+    "KK..............KK",
+    "KpK....KKKK....KpK",
+    "KpqK..KPPPPK..KqpK",
+    "KpppKKPPqPPPKKpppK",
+    ".KpnnKPTPPTPKnnpK.",
+    "..KnnKPPPPPPKnnK..",
+    "...KKKPWPPWPKKK...",
+    ".....KPPWWPPK.....",
+    "......KPPPPK......",
+    ".......KKKK.......",
+};
+static const Spr spr_bat_up = { 18, 10, spr_bat_up_r };
+
+static const char *const spr_bat_down_r[10] = {
+    "..................",
+    "......KKKKKK......",
+    ".....KPPPPPPK.....",
+    "KK...KPTPPTPK...KK",
+    "KpK..KPPPPPPK..KpK",
+    "KppKKKPWPPWPKKKppK",
+    "KpnnpKKPWWPKKpnnpK",
+    ".KnnnpKPPPPKpnnnK.",
+    "..KnnnKKKKKKnnnK..",
+    "...KKK......KKK...",
+};
+static const Spr spr_bat_down = { 18, 10, spr_bat_down_r };
+
+static const char *const spr_shot_r[6] = {
+    "..KKKK..",
+    ".KzyyzK.",
+    "KzyWWyzK",
+    "KzyWWyzK",
+    ".KzyyzK.",
+    "..KKKK..",
+};
+static const Spr spr_shot = { 8, 6, spr_shot_r };
+
+static const char *const spr_charge_r[16] = {
+    "......cccc......",
+    "....cccccccc....",
+    "...ccCCCCCCcc...",
+    "..cCCCCggCCCCc..",
+    ".ccCCggggggCCcc.",
+    ".cCCgggWWgggCCc.",
+    "ccCCggWWWWggCCcc",
+    "ccCggWWWWWWggCcc",
+    "ccCggWWWWWWggCcc",
+    "ccCCggWWWWggCCcc",
+    ".cCCgggWWgggCCc.",
+    ".ccCCggggggCCcc.",
+    "..cCCCCggCCCCc..",
+    "...ccCCCCCCcc...",
+    "....cccccccc....",
+    "......cccc......",
+};
+static const Spr spr_charge = { 16, 16, spr_charge_r };
+
+static const char *const spr_orb_r[8] = {
+    "..xxxx..",
+    ".xzyyzx.",
+    "xzyyyyzx",
+    "xyyWWyyx",
+    "xyyWWyyx",
+    "xzyyyyzx",
+    ".xzyyzx.",
+    "..xxxx..",
+};
+static const Spr spr_orb = { 8, 8, spr_orb_r };
+
+static const char *const spr_med_r[10] = {
+    "..KKKKKK..",
+    ".KWWWWWWwK",
+    "KWWWRRWWwK",
+    "KWWWRRWWwK",
+    "KWRRRRRRwK",
+    "KWRRRRRRwK",
+    "KWWWRRWWwK",
+    "KWWWRRWWwK",
+    ".KwwwwwwwK",
+    "..KKKKKK..",
+};
+static const Spr spr_med = { 10, 10, spr_med_r };
+
+static u64 pal(char ch, int mode)     /* mode: 0 normal, 1/2 carregando, 3 piscada branca, 5 pulso */
+{
+    if (ch == '.') return 0;
+    if (mode == 3) return RGB(255, 255, 255);
+    if (mode == 1) { if (ch == 'O') return RGB(255, 226, 100); if (ch == 'Y') return RGB(255, 250, 200); if (ch == 'o') return RGB(222, 172, 52); }
+    if (mode == 2) { if (ch == 'O') return RGB(255, 156, 88); if (ch == 'Y') return RGB(255, 208, 152); }
+    if (mode == 5) { if (ch == 'g') return RGB(255, 255, 255); if (ch == 'C') return RGB(220, 252, 255); if (ch == 'c') return RGB(96, 224, 250); }
+    switch (ch) {
+    case 'K': return RGB(26, 14, 30);
+    case 'R': return RGB(208, 44, 60);
+    case 'r': return RGB(138, 24, 46);
+    case 'h': return RGB(255, 120, 116);
+    case 'S': return RGB(252, 208, 172);
+    case 's': return RGB(214, 150, 122);
+    case 'B': return RGB(98, 56, 36);
+    case 'E': return RGB(22, 14, 38);
+    case 'M': return RGB(188, 88, 84);
+    case 'O': return RGB(240, 122, 46);
+    case 'o': return RGB(176, 72, 30);
+    case 'Y': return RGB(255, 178, 104);
+    case 'W': return RGB(246, 246, 255);
+    case 'w': return RGB(178, 184, 216);
+    case 'C': return RGB(96, 224, 250);
+    case 'c': return RGB(34, 140, 196);
+    case 'g': return RGB(220, 252, 255);
+    case 'J': return RGB(64, 94, 178);
+    case 'j': return RGB(34, 56, 122);
+    case 'l': return RGB(100, 132, 214);
+    case 'k': return RGB(54, 46, 76);
+    case 'a': return RGB(250, 204, 52);
+    case 'b': return RGB(206, 142, 24);
+    case 'd': return RGB(140, 84, 16);
+    case 'e': return RGB(255, 244, 160);
+    case 'f': return RGB(44, 30, 54);
+    case 'P': return RGB(150, 72, 190);
+    case 'q': return RGB(196, 120, 230);
+    case 'p': return RGB(104, 40, 150);
+    case 'n': return RGB(70, 24, 110);
+    case 'T': return RGB(255, 70, 70);
+    case 'y': return RGB(255, 232, 96);
+    case 'z': return RGB(255, 150, 40);
+    case 'x': return RGB(200, 60, 30);
+    default: return RGB(255, 0, 255);
+    }
+}
+
+static void spr(const Spr *s, float x, float y, int flip, int mode)   /* desenha sprite (coords do mundo) */
+{
+    int r, c, n;
+    char ch;
+    for (r = 0; r < s->h; r++) {
+        const char *row = s->rows[r];
+        for (c = 0; c < s->w; c += n) {
+            ch = row[flip ? s->w - 1 - c : c];
+            n = 1;
+            if (ch == '.') continue;
+            while (c + n < s->w && row[flip ? s->w - 1 - (c + n) : c + n] == ch) n++;
+            put(x + c, y + r, n, 1, pal(ch, mode));
+        }
+    }
+}
+
 
 static void draw_player(void)
 {
-    u64 body = RGB(235, 110, 40), light = RGB(255, 165, 95), dark = RGB(170, 70, 20);     /* moletom */
-    u64 line = RGB(40, 22, 16), skin = RGB(245, 200, 160), glove = RGB(70, 205, 235);
-    u64 jeans = RGB(50, 75, 150), jeans2 = RGB(32, 50, 110), hair = RGB(60, 36, 24);
-    u64 cap = RGB(210, 45, 55), shoe = RGB(245, 245, 245);
-    float x = p.x, y = p.y;
+    float x = p.x + p.w / 2.0f - 10, y = p.y + p.h - 26;       /* sprite 20x26, pe alinhado com a hitbox */
     int moving = (p.vx != 0 && p.ground);
-    int step = (frame / 5) % 2;
-    int bob = (moving && step) ? 1 : 0;
-    int lxa = 2, lxb = 6, ha = 6;
+    int mode = 0;
+    const Spr *sp;
 
     if (p.inv > 0 && (frame / 3) % 2) return;
-    shadow(x + p.w / 2.0f, y + p.h, 14);
-    if (p.charge >= CHARGE_FRAMES && (frame / 3) % 2) { body = RGB(255, 225, 90); light = RGB(255, 250, 200); }
-    else if (p.charge > 20 && (frame / 6) % 2) { body = RGB(255, 150, 80); light = RGB(255, 205, 155); }
+    shadow(p.x + p.w / 2.0f, p.y + p.h, 14);
 
-    if (!p.ground) { lxa = 1; lxb = 7; ha = 4; }
-    else if (moving) { lxa = step ? 3 : 0; lxb = step ? 5 : 8; }
+    if (!p.ground) sp = &spr_max_jump;
+    else if (moving) {
+        int k = (frame / 5) % 4;                                /* ciclo de corrida: 0,1,2,1 */
+        sp = (k == 0) ? &spr_max_run0 : (k == 2) ? &spr_max_run2 : &spr_max_run1;
+    } else sp = &spr_max_idle;
 
-    PM(lxa, 14, 4, ha, jeans);                                   /* pernas (jeans) e tenis */
-    PM(lxb, 14, 4, ha, jeans2);
-    PM(lxa, 11 + ha, 5, 3, shoe);
-    PM(lxb, 11 + ha, 5, 3, shoe);
-    PM(lxa, 13 + ha, 5, 1, line);
-    PM(lxb, 13 + ha, 5, 1, line);
+    if (p.charge >= CHARGE_FRAMES && (frame / 3) % 2) mode = 1;
+    else if (p.charge > 20 && (frame / 6) % 2) mode = 2;
 
-    PM(-1, 7 + bob, 14, 9, line);                                /* moletom */
-    PM(0, 8 + bob, 12, 7, body);
-    PM(2, 9 + bob, 4, 2, light);
-    PM(0, 14 + bob, 12, 1, dark);
-    PM(3, 12 + bob, 6, 2, dark);                                 /* bolso */
-    PM(1, 7 + bob, 10, 2, dark);                                 /* gola do capuz */
-    PM(5, 8 + bob, 1, 3, RGB(245, 245, 245));                    /* cordoes */
-    PM(7, 8 + bob, 1, 3, RGB(245, 245, 245));
+    spr(sp, x, y, p.dir < 0, mode);
 
-    PM(0, -2 + bob, 12, 11, line);                               /* cabeca */
-    PM(4, 2 + bob, 7, 6, skin);                                  /* rosto */
-    PM(1, 3 + bob, 4, 5, hair);                                  /* cabelo de tras */
-    PM(1, -1 + bob, 10, 4, cap);                                 /* bone */
-    PM(8, 2 + bob, 5, 1, RGB(150, 25, 35));                      /* aba do bone */
-    PM(4, 0 + bob, 3, 1, RGB(255, 255, 255));                    /* logo do bone */
-    PM(8, 4 + bob, 1, 2, line);                                  /* olho */
-    PM(8, 7 + bob, 2, 1, RGB(190, 95, 85));                      /* sorriso */
-
-    PM(6, 9 + bob, 7, 5, line);                                  /* braco com a luva */
-    PM(7, 10 + bob, 6, 3, body);
-    PM(7, 10 + bob, 4, 1, light);
-    PM(12, 9 + bob, 5, 5, line);
-    PM(12, 10 + bob, 3, 3, glove);
-    PM(15, 10 + bob, 1, 3, RGB(255, 255, 255));
-
-    if (p.charge > 20) {                                         /* brilho da luva carregando */
+    if (p.charge > 20) {                                        /* energia na luva */
         int full = (p.charge >= CHARGE_FRAMES);
         int sz = full ? 6 : 2 + (p.charge - 20) / 12;
-        float gx = (p.dir > 0) ? x + 17 + sz / 2.0f : x + 12 - 17 - sz / 2.0f;
-        glow(gx, y + 12 + bob, full ? 14 : 8, 80, 205, 255, full ? 18 : 12);
-        PM(17, 12 + bob - sz / 2, sz, sz, (full && (frame / 2) % 2) ? RGB(255, 255, 255) : glove);
+        float gx = (p.dir > 0) ? x + 20 + sz / 2.0f : x - sz / 2.0f;
+        float gy = y + 12.5f;
+        glow(gx, gy, full ? 14 : 8, 80, 205, 255, full ? 18 : 12);
+        put(gx - sz / 2.0f, gy - sz / 2.0f, sz, sz, (full && (frame / 2) % 2) ? RGB(255, 255, 255) : RGB(96, 224, 250));
     }
 }
-#undef PM
 
 #define EM(lx, ly, rw, rh, c) mput(x, e->w, d, (lx), y + (ly), (rw), (rh), (c))
 
@@ -1086,39 +1463,17 @@ static void draw_enemies(void)
         float x = e->x, y = e->y;
         int d = e->dir, f = e->flash;
         u64 white = RGB(255, 255, 255);
+        (void)white;
         if (!e->active) continue;
         shadow(x + e->w / 2.0f, y + e->h, e->w + 2);
 
         if (e->type == E_MET) {
-            u64 c = f ? white : RGB(250, 200, 50), hi = f ? white : RGB(255, 238, 150);
-            u64 sh = f ? white : RGB(200, 140, 30), line = RGB(70, 40, 10);
-            if (e->st == 1) {                                    /* escondido sob o capacete */
-                EM(4, 5, 6, 2, c); EM(2, 7, 10, 3, c); EM(1, 10, 12, 2, c);
-                EM(4, 6, 3, 2, hi); EM(0, 12, 14, 2, sh);
-            } else {
-                int s = (e->st == 0 && (frame / 8) % 2);
-                EM(4, 0, 6, 2, c); EM(2, 2, 10, 3, c); EM(1, 5, 12, 2, c);
-                EM(4, 1, 3, 2, hi); EM(0, 7, 14, 1, sh);
-                EM(2, 8, 10, 4, RGB(50, 34, 28));
-                EM(3, 9, 3, 3, white); EM(8, 9, 3, 3, white);
-                EM(5, 10, 1, 2, line); EM(10, 10, 1, 2, line);
-                EM(2 + s, 12, 4, 2, line); EM(8 - s, 12, 4, 2, line);
-            }
+            const Spr *ms = (e->st == 1) ? &spr_met_hide
+                          : ((e->st == 0 && (frame / 8) % 2) ? &spr_met_walk1 : &spr_met_walk0);
+            spr(ms, x + e->w / 2.0f - 8, y + e->h - 16, d < 0, f ? 3 : 0);
         } else if (e->type == E_BATTON) {
-            u64 c = f ? white : RGB(150, 70, 190), wc = f ? white : RGB(110, 40, 150);
-            int up = (frame / 6) % 2;
-            if (up) {
-                put(x, y, 4, 2, wc); put(x + 1, y + 2, 4, 2, wc);
-                put(x + 10, y, 4, 2, wc); put(x + 9, y + 2, 4, 2, wc);
-            } else {
-                put(x, y + 6, 4, 2, wc); put(x + 1, y + 4, 4, 2, wc);
-                put(x + 10, y + 6, 4, 2, wc); put(x + 9, y + 4, 4, 2, wc);
-            }
-            put(x + 4, y + 1, 6, 8, c);
-            put(x + 4, y, 2, 2, wc); put(x + 8, y, 2, 2, wc);
-            put(x + 5, y + 3, 1, 2, RGB(255, 80, 80)); put(x + 8, y + 3, 1, 2, RGB(255, 80, 80));
-            put(x + 6, y + 6, 1, 2, white); put(x + 7, y + 6, 1, 2, white);
-            glow(x + 6, y + 4, 5, 255, 60, 60, 16); glow(x + 9, y + 4, 5, 255, 60, 60, 16);
+            spr(((frame / 6) % 2) ? &spr_bat_up : &spr_bat_down, x + e->w / 2.0f - 9, y, 0, f ? 3 : 0);
+            glow(x + 7, y + 4, 6, 255, 60, 60, 12);
         } else {
             u64 c = f ? white : RGB(210, 50, 50), hi = f ? white : RGB(240, 110, 110);
             u64 dk = f ? white : RGB(120, 20, 20), hd = f ? white : RGB(160, 30, 30);
@@ -1152,49 +1507,46 @@ static void draw_bullets_items(void)
         float s;
         if (!b->active) continue;
         s = (b->vx > 0) ? -1.0f : 1.0f;
-        if (b->own == 0 && b->dmg == 1) glow(b->x, b->y, 10, 255, 200, 80, 16);
-        else if (b->own == 0) glow(b->x, b->y, 18, 80, 200, 255, 16);
-        else glow(b->x, b->y, 10, 255, 90, 40, 16);
         if (b->own == 0 && b->dmg == 1) {
-            put(b->x - 4, b->y - 3, 8, 6, RGB(200, 120, 30));
-            put(b->x - 3, b->y - 2, 6, 4, RGB(255, 240, 120));
-            put(b->x - 1, b->y - 1, 3, 2, RGB(255, 255, 255));
+            glow(b->x, b->y, 10, 255, 200, 80, 16);
+            put(b->x + s * 7 - 2, b->y - 1, 4, 2, RGBA(255, 200, 80, 70));
+            spr(&spr_shot, b->x - 4, b->y - 3, 0, 0);
         } else if (b->own == 0) {
-            put(b->x + s * 8 - 3, b->y - 2, 6, 4, RGB(60, 150, 200));        /* rastro */
-            put(b->x + s * 14 - 2, b->y - 1, 4, 2, RGB(40, 100, 160));
-            put(b->x - 7, b->y - 3, 14, 6, RGB(60, 190, 240));
-            put(b->x - 5, b->y - 6, 10, 12, RGB(120, 230, 255));
-            put(b->x - 3, b->y - 3, 6, 6, RGB(255, 255, 255));
+            glow(b->x, b->y, 18, 80, 200, 255, 16);
+            put(b->x + s * 12 - 3, b->y - 3, 6, 6, RGBA(80, 200, 255, 70));
+            put(b->x + s * 18 - 2, b->y - 2, 4, 4, RGBA(80, 200, 255, 40));
+            spr(&spr_charge, b->x - 8, b->y - 8, 0, ((frame / 2) % 2) ? 5 : 0);
         } else {
-            put(b->x - 4, b->y - 2, 8, 4, RGB(200, 70, 20));
-            put(b->x - 2, b->y - 4, 4, 8, RGB(200, 70, 20));
-            put(b->x - 3, b->y - 3, 6, 6, RGB(255, 120, 40));
-            put(b->x - 1, b->y - 1, 2, 2, RGB(255, 255, 160));
+            glow(b->x, b->y, 10, 255, 90, 40, 16);
+            spr(&spr_orb, b->x - 4, b->y - 4, 0, 0);
         }
     }
     for (i = 0; i < MAX_ITEMS; i++)
         if (it[i].active) {
             float bob = ((frame / 10) % 2) ? 0.0f : -1.0f;
             glow(it[i].x + 4, it[i].y + 4 + bob, 10, 120, 255, 150, 14);
-            put(it[i].x - 1, it[i].y - 1 + bob, 10, 10, RGB(120, 20, 20));
-            put(it[i].x, it[i].y + bob, 8, 8, RGB(255, 255, 255));
-            put(it[i].x + 3, it[i].y + 1 + bob, 2, 6, RGB(230, 40, 40));
-            put(it[i].x + 1, it[i].y + 3 + bob, 6, 2, RGB(230, 40, 40));
+            spr(&spr_med, it[i].x - 1, it[i].y - 1 + bob, 0, 0);
         }
 }
 
-static void draw_bar(float x, int hp, u64 col, u64 hi)
+static void draw_bar(float x, int hp, u64 col, u64 hi, const char *emblem)
 {
-    int i;
-    ui(x - 3, 5, 12, MAXHP * 3 + 6, RGB(150, 160, 205));
-    ui(x - 2, 6, 10, MAXHP * 3 + 4, RGB(0, 0, 0));
-    ui(x, 8, 6, MAXHP * 3, RGB(36, 38, 60));
+    int i, H = MAXHP * 3;
+    ui(x - 3, 4, 12, H + 8, RGB(214, 220, 244));                 /* capsula metalica */
+    ui(x - 4, 6, 14, H + 4, RGB(214, 220, 244));
+    ui(x - 2, 5, 10, H + 6, RGB(20, 22, 44));
+    ui(x - 1, 6, 8, H + 4, RGB(8, 8, 20));
+    ui(x, 8, 6, H, RGB(32, 34, 58));
     if (hp > 0) {
         ui(x, 8 + (MAXHP - hp) * 3, 6, hp * 3, col);
         ui(x, 8 + (MAXHP - hp) * 3, 2, hp * 3, hi);
-        ui(x + 5, 8 + (MAXHP - hp) * 3, 1, hp * 3, RGBA(0, 0, 0, 50));
+        ui(x + 5, 8 + (MAXHP - hp) * 3, 1, hp * 3, RGBA(0, 0, 0, 70));
     }
-    for (i = 1; i < MAXHP; i++) ui(x, 8 + i * 3 - 1, 6, 1, RGB(0, 0, 0));
+    for (i = 1; i < MAXHP; i++) ui(x, 8 + i * 3 - 1, 6, 1, RGB(8, 8, 20));
+    ui(x - 4, 8 + H + 5, 14, 13, RGB(214, 220, 244));            /* emblema */
+    ui(x - 3, 8 + H + 6, 12, 11, RGB(40, 72, 176));
+    ui(x - 3, 8 + H + 6, 12, 2, RGB(96, 138, 236));
+    text(x + 1, 8 + H + 9, emblem, 1, RGB(255, 255, 255));
 }
 
 static void draw_head_icon(float x, float y)                     /* carinha do Max para as vidas */
@@ -1213,11 +1565,11 @@ static void draw_hud(void)
     u64 col = RGB(250, 240, 130), hi = RGB(255, 255, 220);
     if (p.hp <= 7) { col = ((frame / 6) % 2) ? RGB(255, 70, 70) : RGB(190, 40, 50); hi = RGB(255, 170, 170); }
     else if (p.hp <= 14) { col = RGB(255, 160, 60); hi = RGB(255, 210, 150); }
-    draw_bar(8, p.hp, col, hi);
+    draw_bar(8, p.hp, col, hi, "M");
     if (bossActive) {
         int i, hp = 0;
         for (i = 0; i < MAX_ENEMIES; i++) if (en[i].active && en[i].type == E_BOSS) hp = en[i].hp;
-        draw_bar(VW - 14, hp, RGB(255, 90, 90), RGB(255, 170, 170));
+        draw_bar(VW - 14, hp, RGB(255, 90, 90), RGB(255, 170, 170), "R");
     }
     ui(24, 5, 120, 33, RGBA(0, 0, 24, 100));                      /* painel translucido */
     ui(24, 5, 120, 1, RGBA(150, 160, 205, 110)); ui(24, 37, 120, 1, RGBA(150, 160, 205, 110));
