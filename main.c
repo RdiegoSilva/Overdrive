@@ -48,7 +48,7 @@ enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO };
 enum { E_MET, E_BATTON, E_BOSS };
 
 /* ---------- tipos ---------- */
-typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives; } Player;
+typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf; } Player;
 typedef struct { int active, own, dmg; float x, y, vx, vy; } Bullet;   /* own: 0 jogador, 1 inimigo */
 typedef struct { int active, type, hp, dir, t, st, w, h, flash, ground; float x, y, vx, vy, by; } Enemy;
 typedef struct { int active; float x, y, vy; } Item;
@@ -309,7 +309,7 @@ static void respawn_player(void)
 {
     p.x = cpx; p.y = 10 * TS; p.vx = p.vy = 0;
     p.w = 12; p.h = 20; p.dir = 1; p.hp = MAXHP;
-    p.inv = 0; p.stun = 0; p.ground = 0; p.charge = 0;
+    p.inv = 0; p.stun = 0; p.ground = 0; p.charge = 0; p.coyote = 0; p.jbuf = 0;
     memset(bl, 0, sizeof(bl));
     memset(it, 0, sizeof(it));
     memset(pt, 0, sizeof(pt));
@@ -377,7 +377,10 @@ static void update_player(unsigned pad, unsigned pressed)
         else if (pad & PAD_RIGHT) { p.vx = RUN; p.dir = 1; }
         else p.vx = 0;
 
-        if ((pressed & PAD_CROSS) && p.ground) { p.vy = -JUMP; p.ground = 0; }
+        /* buffer de pulo + coyote time: perdoa apertos um pouco antes de pousar / depois de sair da borda */
+        if (pressed & PAD_CROSS) p.jbuf = 6; else if (p.jbuf > 0) p.jbuf--;
+        if (p.ground) p.coyote = 6; else if (p.coyote > 0) p.coyote--;
+        if (p.jbuf > 0 && p.coyote > 0) { p.vy = -JUMP; p.ground = 0; p.coyote = 0; p.jbuf = 0; }
         if (!(pad & PAD_CROSS) && p.vy < -2.0f) p.vy = -2.0f;   /* pulo variavel */
 
         if (pressed & PAD_SQUARE) {
@@ -402,6 +405,9 @@ static void update_player(unsigned pad, unsigned pressed)
     fall = p.vy;
     move_x(&p.x, p.y, p.w, p.h, &p.vx);
     p.ground = move_y(p.x, &p.y, p.w, p.h, &p.vy);
+    /* o snap deixa o pe exatamente em cima do tile; sem a sonda abaixo, o flag de chao so
+       ficava ligado ~1 a cada 3 quadros (a gravidade precisa acumular 1px para "bater") */
+    if (!p.ground && p.vy >= 0 && hits(p.x, p.y + 1, p.w, p.h, 1)) p.ground = 1;
     if (p.ground && !was && fall > 2.5f)                    /* poeira ao pousar */
         burst(p.x + p.w / 2, p.y + p.h, 5, 200, 200, 215, 1.2f);
 
@@ -954,11 +960,13 @@ static void init_pad(void)
 
 static unsigned read_pad(void)
 {
+    static unsigned last = 0;     /* se a leitura falhar, repete o ultimo estado (nao solta botoes) */
     struct padButtonStatus b;
     int s = padGetState(0, 0);
-    if (s != PAD_STATE_STABLE && s != PAD_STATE_FINDCTP1) return 0;
-    if (padRead(0, 0, &b) == 0) return 0;
-    return 0xffff ^ b.btns;
+    if (s != PAD_STATE_STABLE && s != PAD_STATE_FINDCTP1) return last;
+    if (padRead(0, 0, &b) == 0) return last;
+    last = 0xffff ^ b.btns;
+    return last;
 }
 
 static void init_gs(void)
