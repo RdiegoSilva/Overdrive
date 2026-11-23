@@ -26,9 +26,9 @@
 #define VW 320
 #define VH 224
 #define TS 16              /* tamanho do tile */
-#define MW 240             /* largura da fase em tiles */
+#define MW 312             /* largura da fase em tiles */
 #define MH 14              /* altura da fase em tiles */
-#define GOAL_X (226 * TS)  /* gatilho da cena final da Parte 1 */
+#define GOAL_X (298 * TS)  /* gatilho da cena final da Parte 1 */
 #define KING_X (MW * TS - 110)   /* posicao do chefao final na cena */
 #define KING_Y 136
 
@@ -37,10 +37,17 @@
 #define RUN 1.6f
 #define JUMP 5.6f
 #define MAXHP 28
+#define SLIDE 1.0f          /* velocidade de queda deslizando na parede */
+#define WALLJUMP 5.4f       /* forca do pulo na parede */
+#define KICKV 2.0f          /* impulso horizontal do pulo na parede */
+#define GATE_L 261          /* portoes da arena do mini-chefe */
+#define GATE_R 280
+#define ARENA_X (GATE_L * TS)
+#define MINI_TRIGGER (266 * TS)
 #define CHARGE_FRAMES 60
 
 #define MAX_BULLETS 24
-#define MAX_ENEMIES 40
+#define MAX_ENEMIES 48
 #define MAX_ITEMS 8
 #define MAX_PARTS 48
 
@@ -48,12 +55,12 @@
 #define RGBA(r, g, b, a) GS_SETREG_RGBAQ((r), (g), (b), (a), 0x00)   /* a: 0..128 (128 = opaco) */
 
 enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT };
-enum { E_MET, E_BATTON, E_BOSS };
+enum { E_MET, E_BATTON, E_BOSS, E_MINI };
 
 /* ---------- tipos ---------- */
-typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf; } Player;
+typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf, wall, kick, kdir, wcoy, wdir; } Player;
 typedef struct { int active, own, dmg; float x, y, vx, vy; } Bullet;   /* own: 0 jogador, 1 inimigo */
-typedef struct { int active, type, hp, dir, t, st, w, h, flash, ground; float x, y, vx, vy, by; } Enemy;
+typedef struct { int active, type, hp, dir, t, st, w, h, flash, ground, a; float x, y, vx, vy, by; } Enemy;
 typedef struct { int active; float x, y, vy; } Item;
 typedef struct { int active, life, size, r, g, b; float x, y, vx, vy; } Part;
 
@@ -72,6 +79,8 @@ static Part pt[MAX_PARTS];
 static int state = ST_TITLE;
 static int paused = 0, ready = 0, frame = 0, score = 0;
 static int bossActive = 0, bossDeath = 0, shake = 0;
+static int miniState = 0, wallTip = 0;      /* mini-chefe: 0 nao comecou, 1 lutando, 2 derrotado */
+static float miniCam = 0;
 static float cam = 0, cpx = 3 * TS;
 static float bossX = 0, bossY = 0;
 static int introT = 0;
@@ -89,6 +98,8 @@ static const int spawns[][3] = {
     {E_MET, 166, 12}, {E_BATTON, 172, 5}, {E_MET, 181, 12}, {E_BATTON, 184, 4},
     {E_MET, 189, 12}, {E_MET, 196, 12}, {E_BATTON, 199, 5}, {E_MET, 201, 12},
     {E_BATTON, 206, 4}, {E_MET, 213, 12},
+    {E_MET, 222, 12}, {E_MET, 236, 12}, {E_BATTON, 239, 4}, {E_MET, 243, 12},
+    {E_MET, 284, 12}, {E_BATTON, 288, 4}, {E_MET, 290, 12},
 };
 #define NSPAWN ((int)(sizeof(spawns) / sizeof(spawns[0])))
 
@@ -353,7 +364,18 @@ static void build_level(void)
     fill(203, 10, 3, 2, 1);
     fill(209, 12, 3, 2, 0);
     fill(215, 11, 2, 1, 2);
-    /* 220 em diante: arena plana da cena final */
+    /* ---- 220 em diante: aprendendo a pular na parede ---- */
+    fill(226, 7, 2, 3, 1);                  /* poco A: parede esquerda (com porta embaixo) */
+    fill(230, 7, 2, 5, 1);                  /* parede direita: so se passa escalando */
+    fill(232, 9, 3, 1, 1);                  /* pouso depois do poco */
+    fill(240, 11, 2, 1, 2);
+    fill(245, 12, 3, 2, 0);
+    fill(250, 3, 2, 7, 1);                  /* poco B: mais alto */
+    fill(254, 3, 2, 9, 1);
+    fill(256, 5, 3, 1, 1);                  /* escada de volta ao chao */
+    fill(259, 8, 2, 1, 1);
+    /* 261 a 280: arena do mini-chefe (portoes fecham na luta) */
+    /* 292 em diante: arena plana da cena final */
 }
 
 static void spawn_enemies(void)
@@ -379,18 +401,19 @@ static void respawn_player(void)
     p.x = cpx; p.y = 10 * TS; p.vx = p.vy = 0;
     p.w = 12; p.h = 20; p.dir = 1; p.hp = MAXHP;
     p.inv = 0; p.stun = 0; p.ground = 0; p.charge = 0; p.coyote = 0; p.jbuf = 0;
+    p.wall = p.kick = p.kdir = p.wcoy = p.wdir = 0;
     memset(bl, 0, sizeof(bl));
     memset(it, 0, sizeof(it));
     memset(pt, 0, sizeof(pt));
     build_level();
     spawn_enemies();
-    bossActive = 0; bossDeath = 0; shake = 0;
+    bossActive = 0; bossDeath = 0; shake = 0; miniState = 0;
     ready = 90;
 }
 
 static void new_game(void)
 {
-    p.lives = 3; score = 0; cpx = 3 * TS;
+    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0;
     respawn_player();
     state = ST_INTRO; introT = 150; paused = 0;
 }
@@ -440,17 +463,33 @@ static void update_player(unsigned pad, unsigned pressed)
     if (p.inv > 0) p.inv--;
 
     if (p.stun > 0) {
-        p.stun--;
+        p.stun--; p.wall = 0; p.kick = 0;
     } else {
-        if (pad & PAD_LEFT) { p.vx = -RUN; p.dir = -1; }
+        if (p.kick > 0) { p.kick--; p.vx = p.kdir * KICKV; p.dir = p.kdir; }   /* impulso do pulo na parede */
+        else if (pad & PAD_LEFT) { p.vx = -RUN; p.dir = -1; }
         else if (pad & PAD_RIGHT) { p.vx = RUN; p.dir = 1; }
         else p.vx = 0;
+
+        /* parede: no ar, encostado e segurando na direcao dela */
+        p.wall = 0;
+        if (!p.ground && p.kick == 0) {
+            if ((pad & PAD_LEFT) && hits(p.x - 1, p.y, p.w, p.h, 1)) p.wall = -1;
+            else if ((pad & PAD_RIGHT) && hits(p.x + 1, p.y, p.w, p.h, 1)) p.wall = 1;
+        }
+        if (p.wall) { p.wcoy = 6; p.wdir = p.wall; p.dir = -p.wall; }     /* de costas pra parede: atira pro lado de fora */
+        else if (p.wcoy > 0) p.wcoy--;
+        if (p.ground) p.wcoy = 0;
 
         /* buffer de pulo + coyote time: perdoa apertos um pouco antes de pousar / depois de sair da borda */
         if (pressed & PAD_CROSS) p.jbuf = 6; else if (p.jbuf > 0) p.jbuf--;
         if (p.ground) p.coyote = 6; else if (p.coyote > 0) p.coyote--;
         if (p.jbuf > 0 && p.coyote > 0) { p.vy = -JUMP; p.ground = 0; p.coyote = 0; p.jbuf = 0; }
-        if (!(pad & PAD_CROSS) && p.vy < -2.0f) p.vy = -2.0f;   /* pulo variavel */
+        else if (p.jbuf > 0 && !p.ground && p.wcoy > 0) {                 /* pulo na parede */
+            p.vy = -WALLJUMP; p.kick = 8; p.kdir = -p.wdir; p.vx = p.kdir * KICKV; p.dir = p.kdir;
+            p.jbuf = 0; p.wcoy = 0; p.wall = 0; wallTip = 1;
+            burst(p.x + (p.wdir > 0 ? p.w : 0), p.y + p.h / 2, 5, 220, 220, 240, 1.2f);
+        }
+        if (!(pad & PAD_CROSS) && p.vy < -2.0f && p.kick == 0) p.vy = -2.0f;   /* pulo variavel */
 
         if (pressed & PAD_SQUARE) {
             if (small_shots() < 3)
@@ -470,6 +509,9 @@ static void update_player(unsigned pad, unsigned pressed)
 
     p.vy += GRAV;
     if (p.vy > MAXFALL) p.vy = MAXFALL;
+    if (p.wall && p.vy > SLIDE) p.vy = SLIDE;                         /* desliza devagar na parede */
+    if (p.wall && p.vy > 0 && (frame % 5) == 0)
+        burst(p.x + (p.wall > 0 ? p.w : 0), p.y + p.h - 3, 1, 210, 210, 225, 0.5f);
     was = p.ground;
     fall = p.vy;
     move_x(&p.x, p.y, p.w, p.h, &p.vx);
@@ -486,7 +528,11 @@ static void update_player(unsigned pad, unsigned pressed)
     if (hits(p.x + 2, p.y + 2, p.w - 4, p.h - 4, 2)) { p.hp = 0; kill_player(); return; }
     if (p.y > MH * TS + 20) { p.hp = 0; kill_player(); return; }
 
-    if (p.x > 200 * TS) cpx = 200 * TS;
+    if (p.x > 285 * TS) cpx = 285 * TS;
+    else if (p.x > 248 * TS) cpx = 248 * TS;
+    else if (p.x > 237 * TS) cpx = 237 * TS;
+    else if (p.x > 222 * TS) cpx = 222 * TS;
+    else if (p.x > 200 * TS) cpx = 200 * TS;
     else if (p.x > 180 * TS) cpx = 180 * TS;
     else if (p.x > 157 * TS) cpx = 157 * TS;
     else if (p.x > 118 * TS) cpx = 118 * TS;
@@ -498,6 +544,20 @@ static void update_player(unsigned pad, unsigned pressed)
 static void kill_enemy(Enemy *e)
 {
     e->active = 0;
+    if (e->type == E_MINI) {                                          /* Capitao Lobo derrotado */
+        int ty, k;
+        score += 1500; shake = 30; miniState = 2;
+        burst(e->x + e->w / 2, e->y + e->h / 2, 30, 255, 200, 80, 3.0f);
+        burst(e->x + e->w / 2, e->y + e->h / 2, 16, 140, 190, 255, 2.0f);
+        memset(bl, 0, sizeof(bl));
+        for (ty = 0; ty < 12; ty++) { map[ty][GATE_L] = 0; map[ty][GATE_R] = 0; }   /* abre os portoes */
+        for (k = 0; k < 2; k++) {
+            int i;
+            for (i = 0; i < MAX_ITEMS; i++)
+                if (!it[i].active) { it[i].active = 1; it[i].x = e->x + 6 + k * 12; it[i].y = e->y + 10; it[i].vy = -3; break; }
+        }
+        return;
+    }
     if (e->type == E_BOSS) {
         score += 2000; bossDeath = 150; shake = 30;
         bossX = e->x; bossY = e->y;
@@ -551,6 +611,45 @@ static void update_enemy(Enemy *e)
         }
         e->y = e->by + sinf(e->t * 0.07f) * 8.0f;              /* onda menor e mais lenta */
         if (e->t > 500) e->active = 0;
+    } else if (e->type == E_MINI) {              /* Capitao Lobo */
+        if (miniState != 1) return;
+        if (e->st == 5) {
+            /* cai do alto */
+        } else if (e->st == 0) {                 /* encara o jogador */
+            e->dir = (px < ex) ? -1 : 1; e->vx = 0;
+            if (e->t > 36) {
+                e->a++;
+                if (e->a % 3 == 0) { e->st = 3; e->t = 0; e->vy = -6.4f; e->vx = e->dir * 1.4f; }
+                else { e->st = 1; e->t = 0; }
+            }
+        } else if (e->st == 1) {                 /* aviso: vai investir */
+            e->vx = 0;
+            if (e->t > 28) { e->st = 2; e->t = 0; e->vx = e->dir * 3.6f; }
+        } else if (e->st == 2) {                 /* investida */
+            if ((frame % 3) == 0) burst(e->x + e->w / 2 - e->dir * 8, e->y + e->h, 1, 210, 210, 230, 0.8f);
+            if (e->t > 55) { e->st = 4; e->t = 0; e->vx = 0; }
+        } else if (e->st == 3) {                 /* salta e uiva: leque de tiros */
+            if (e->t == 16) {
+                float dx = e->dir * 2.6f;
+                fire(1, 2, ex, e->y + 12, dx, -0.9f);
+                fire(1, 2, ex, e->y + 12, dx, 0.0f);
+                fire(1, 2, ex, e->y + 12, dx, 0.9f);
+            }
+            if (e->t > 8 && e->ground) { e->st = 4; e->t = 0; e->vx = 0; }
+        } else {                                 /* recupera o folego */
+            e->vx = 0;
+            if (e->t > 34) { e->st = 0; e->t = 0; }
+        }
+        e->vy += GRAV; if (e->vy > MAXFALL) e->vy = MAXFALL;
+        if (move_x(&e->x, e->y, e->w, e->h, &e->vx) && e->st == 2) {
+            e->st = 4; e->t = 0; shake = 10;                            /* bateu na parede */
+            burst(e->x + e->w / 2 + e->dir * 10, e->y + e->h / 2, 8, 220, 220, 240, 1.6f);
+        }
+        e->ground = move_y(e->x, &e->y, e->w, e->h, &e->vy);
+        if (e->st == 5 && e->ground && e->t > 3) {
+            e->st = 0; e->t = 0; shake = 16;
+            burst(e->x + e->w / 2, e->y + e->h, 10, 210, 210, 230, 1.6f);
+        }
     } else if (!bossActive) {
         return;
     } else {                                     /* chefe */
@@ -591,6 +690,7 @@ static void update_bullets(void)
                 Enemy *e = &en[k];
                 if (!e->active) continue;
                 if (e->type == E_BOSS && !bossActive) continue;
+                if (e->type == E_MINI && e->st == 5) continue;
                 if (!ov(b->x - 3, b->y - 3, 6, 6, e->x, e->y, e->w, e->h)) continue;
                 b->active = 0;
                 if (e->type == E_MET && e->st == 1) {           /* capacete: sem dano */
@@ -672,6 +772,23 @@ static void update_cut(unsigned pressed)
     }
 }
 
+static void start_mini(void)
+{
+    int i, ty;
+    miniState = 1; miniCam = cam;
+    for (ty = 0; ty < 12; ty++) { map[ty][GATE_L] = 1; map[ty][GATE_R] = 1; }   /* fecha os portoes */
+    memset(bl, 0, sizeof(bl));
+    for (i = 0; i < MAX_ENEMIES; i++)
+        if (!en[i].active) {
+            Enemy *e = &en[i];
+            memset(e, 0, sizeof(*e));
+            e->active = 1; e->type = E_MINI; e->w = 24; e->h = 38; e->hp = 24; e->dir = -1;
+            e->x = 274 * TS; e->y = -60; e->st = 5;
+            shake = 12;
+            break;
+        }
+}
+
 /* ---------- loop de logica ---------- */
 static void update(unsigned pad, unsigned pressed)
 {
@@ -693,6 +810,7 @@ static void update(unsigned pad, unsigned pressed)
     update_player(pad, pressed);
     if (state != ST_PLAY) return;
     if (p.x > GOAL_X) { start_cut(); return; }                      /* chegou na arena final */
+    if (miniState == 0 && p.x > MINI_TRIGGER && p.x < (GATE_R - 2) * TS) start_mini();
 
     for (i = 0; i < MAX_ENEMIES; i++) {
         Enemy *e = &en[i];
@@ -700,6 +818,7 @@ static void update(unsigned pad, unsigned pressed)
         update_enemy(e);
         if (!e->active) continue;
         if (e->type == E_BOSS && !bossActive) continue;
+        if (e->type == E_MINI && e->st == 5) continue;
         if (ov(p.x, p.y, p.w, p.h, e->x + 1, e->y + 1, e->w - 2, e->h - 2))
             hurt_player(e->type == E_BOSS ? 4 : (e->type == E_BATTON ? 2 : 3));
         if (state != ST_PLAY) return;
@@ -721,6 +840,12 @@ camera:
     if (cam < 0) cam = 0;
     if (cam > MW * TS - VW) cam = MW * TS - VW;
     if (bossActive && cam < 130 * TS) cam = 130 * TS;
+    if (miniState == 1 || miniState == 2) {                         /* camera suave: trava na arena durante a luta */
+        float d = ((miniState == 1) ? (float)ARENA_X : cam) - miniCam;
+        if (d > 5) d = 5;
+        if (d < -5) d = -5;
+        miniCam += d; cam = miniCam;
+    }
 }
 
 /* ---------- desenho ---------- */
@@ -964,6 +1089,12 @@ static void draw_tiles(void)
             unsigned h = hsh(tx * 31 + ty * 7);
             if (t == 1 && ty >= 12) {
                 street_tile(x, y, ty, h, tx, tile_at(tx - 1, ty) != 1, tile_at(tx + 1, ty) != 1);
+            } else if (t == 1 && miniState == 1 && (tx == GATE_L || tx == GATE_R)) {   /* portao da arena */
+                put(x, y, TS, TS, RGB(58, 46, 84));
+                put(x, y, 2, TS, RGB(120, 104, 168)); put(x + TS - 2, y, 2, TS, RGB(30, 22, 54));
+                for (k = 0; k < 4; k++) put(x + 2, y + k * 4 + 3, TS - 4, 1, RGB(30, 22, 54));
+                put(x + 6, y, 4, TS, ((frame / 8) % 2) ? RGB(255, 80, 80) : RGB(170, 36, 50));
+                put(x + 7, y, 2, TS, RGB(255, 190, 180));
             } else if (t == 1) {                                 /* caixote de metal rebitado */
                 put(x, y, TS, TS, RGB(86, 88, 152));
                 put(x, y, TS, 1, RGB(170, 174, 232)); put(x, y, 1, TS, RGB(170, 174, 232));
@@ -1378,6 +1509,12 @@ static u64 pal(char ch, int mode)     /* mode: 0 normal, 1/2 carregando, 3 pisca
     case 'i': return RGB(208, 52, 74);
     case 'v': return RGB(255, 150, 196);
     case 'u': return RGB(206, 96, 150);
+    case 't': return RGB(180, 186, 208);
+    case '1': return RGB(130, 136, 166);
+    case '2': return RGB(82, 88, 120);
+    case '3': return RGB(255, 226, 70);
+    case '4': return RGB(218, 222, 236);
+    case '5': return RGB(230, 60, 70);
     default: return RGB(255, 0, 255);
     }
 }
@@ -1398,6 +1535,88 @@ static void spr(const Spr *s, float x, float y, int flip, int mode)   /* desenha
     }
 }
 
+
+/* pose de parede do Max e Capitao Lobo (mini-chefe) */
+static const char *const spr_max_wall_r[26] = {
+    "......KKKKKK........",
+    ".....KRRRhhRK.......",
+    "....KRRRhRRRRRK.....",
+    "....KRRRRRRRRRRKKK..",
+    "....KrrrrrrrrrrRRRK.",
+    "...KBBBsSSSSBBSKKKK.",
+    "...KBBBsSSSSSSESK...",
+    "...KBBBsSSSSSSESK...",
+    "....KBBsSSSSSSMSK...",
+    ".....KssSSSSSSSK....",
+    "......KKYYYYYKKKKKK.",
+    ".....KYYYYYYYYKKKKK.",
+    ".....KYOOOOOOOOcCCgK",
+    ".....KOOOYYOooocCCCK",
+    ".....KOOOooOooocccKK",
+    ".....KoOOOOOoooKKKK.",
+    "......KooooooKK.....",
+    "......KJJJJJJK......",
+    ".....KJJlJJjjK......",
+    "....KJJJKKjjK.......",
+    "...KJJJK..KjjK......",
+    "...KWWK....KjjK.....",
+    "..KKWwK.....KWWK....",
+    "...KkkK.....KwwK....",
+    "....KK......KkkK....",
+    "............KKK.....",
+};
+static const Spr spr_max_wall = { 20, 26, spr_max_wall_r };
+
+static const char *const spr_wolf_r[47] = {
+    ".......................K.............",
+    "...........K..........K1K............",
+    "..........K1K.........K1K............",
+    "..........K11K.......K11K............",
+    "..........K111K.....K1151K...........",
+    "..........K1511K....K1551K...........",
+    "...........K5511KKKKK1551K...........",
+    "...........K55551ttt155551K..........",
+    "...........K551tttttttt151K..........",
+    "...........K5tttttttttttK1K..........",
+    "...........KllllllllllKKllK..........",
+    "..........KtlJJJJJJJKKJJJjK..........",
+    "..........KtjjjjjjjjjjjjjjKKKKKKK....",
+    "........K.Ktttttttttt333WttttttKKK...",
+    ".......KlKKttttttttt13333ttttttKKK...",
+    "......KlllKttttttt1111tttttttttKKK...",
+    "......KlllKKttttt11111ttttttttt1K....",
+    "......Klllllltt1111111ttt2222222K....",
+    ".....KllllllJJ111111111111W111W1K....",
+    ".....KllllJJJJJK11111llllJWJJJWK.....",
+    ".....KllJJJJJJjllllllllJJJJJJjK.KKKK.",
+    "....KlJJJJJJJjjjJJJJlJJJJJJJjjjK4444K",
+    ".....KJJJJJjjjjJJJJJJJJtttttttttKKK4K",
+    ".....KJJJjjjjjjj3333jJJt111111124444K",
+    "......KJjjjjjjjj3333jjJt11111112KKK4K",
+    "....KKKtjjjjjJjj3333jjjt111111124444K",
+    ".KKK2ttt112lJJjjjjjjjjj222222222KKKK.",
+    "K2222ttt112lJjjjjjjjjjjJjKKKKKKK.....",
+    "K2222ttt112lJJJJJJJJJJJJjK...........",
+    ".K22tttt112lJJJJJJJJJJJJjK...........",
+    ".Kt2tttt112lJJJJJJJJJJJJjK...........",
+    ".Kt2tt4444411111333311111K...........",
+    "..Kttt4444212222333322222K...........",
+    "..Kttt4444212222333322222K...........",
+    "..Kttt4444222222333322222K...........",
+    "..Kttt22222t1112KKKt1112K............",
+    "...KtttKKKKt1112K.Kt1112K............",
+    "...KtKK...Kt1112K.Kt1112K............",
+    "....K.....Kt1112K.Kt1112K............",
+    "..........Kt1112K.Kt1112K............",
+    "..........Kt1112K.Kt1112KK...........",
+    ".........KlllllllKllllllllK..........",
+    ".........KlJJJJJjKlJJJJJJjKK.........",
+    ".........KlJJJJJjKlJJJJJJ444K........",
+    ".........KlJJJJJjKlJJJJJJ444K........",
+    ".........KjjjjjjjKjjjjjjj444K........",
+    "..........KKKKKKK.KKKKKKKKKK.........",
+};
+static const Spr spr_wolf = { 37, 47, spr_wolf_r };
 
 /* Rei Leao (60x70) e a filha do Max (20x36), pixel art */
 static const char *const spr_king_r[70] = {
@@ -1577,7 +1796,8 @@ static void draw_player(void)
     if (p.inv > 0 && (frame / 3) % 2) return;
     shadow(p.x + p.w / 2.0f, p.y + p.h, 14);
 
-    if (!p.ground) sp = &spr_max_jump;
+    if (p.wall) { sp = &spr_max_wall; x += -p.wall * 2; }
+    else if (!p.ground) sp = &spr_max_jump;
     else if (moving) {
         int k = (frame / 5) % 4;                                /* ciclo de corrida: 0,1,2,1 */
         sp = (k == 0) ? &spr_max_run0 : (k == 2) ? &spr_max_run2 : &spr_max_run1;
@@ -1619,6 +1839,16 @@ static void draw_enemies(void)
         } else if (e->type == E_BATTON) {
             spr(((frame / 6) % 2) ? &spr_bat_up : &spr_bat_down, x + e->w / 2.0f - 9, y, 0, f ? 3 : 0);
             glow(x + 7, y + 4, 6, 255, 60, 60, 12);
+        } else if (e->type == E_MINI) {
+            int tele = (e->st == 1 && (frame / 3) % 2);
+            float sx = e->x + e->w / 2.0f - spr_wolf.w / 2.0f, sy = e->y + e->h - spr_wolf.h;
+            if (e->st == 2) {                                               /* rastro de velocidade */
+                int k;
+                for (k = 0; k < 3; k++)
+                    put(e->x - d * (8 + k * 9) + (d > 0 ? -6 : e->w), e->y + 6 + k * 10, 14, 2, RGBA(160, 200, 255, 70 - k * 18));
+            }
+            spr(&spr_wolf, sx, sy, d < 0, (f || tele) ? 3 : 0);
+            if (e->st == 1) glow(e->x + e->w / 2.0f, e->y + 16, 16, 255, 80, 80, 8);
         } else {
             u64 c = f ? white : RGB(210, 50, 50), hi = f ? white : RGB(240, 110, 110);
             u64 dk = f ? white : RGB(120, 20, 20), hd = f ? white : RGB(160, 30, 30);
@@ -1711,10 +1941,10 @@ static void draw_hud(void)
     if (p.hp <= 7) { col = ((frame / 6) % 2) ? RGB(255, 70, 70) : RGB(190, 40, 50); hi = RGB(255, 170, 170); }
     else if (p.hp <= 14) { col = RGB(255, 160, 60); hi = RGB(255, 210, 150); }
     draw_bar(8, p.hp, col, hi, "M");
-    if (bossActive) {
+    if (bossActive || miniState == 1) {
         int i, hp = 0;
-        for (i = 0; i < MAX_ENEMIES; i++) if (en[i].active && en[i].type == E_BOSS) hp = en[i].hp;
-        draw_bar(VW - 14, hp, RGB(255, 90, 90), RGB(255, 170, 170), "R");
+        for (i = 0; i < MAX_ENEMIES; i++) if (en[i].active && (en[i].type == E_BOSS || en[i].type == E_MINI)) hp = en[i].hp;
+        draw_bar(VW - 14, hp, RGB(255, 90, 90), RGB(255, 170, 170), "L");
     }
     ui(24, 5, 120, 33, RGBA(0, 0, 24, 100));                      /* painel translucido */
     ui(24, 5, 120, 1, RGBA(150, 160, 205, 110)); ui(24, 37, 120, 1, RGBA(150, 160, 205, 110));
@@ -1757,7 +1987,8 @@ static void draw(void)
         logo(36, "REIS BOT", 6);
         text_center(84, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
         if ((frame / 30) % 2) text_center(126, "APERTE START", 3, RGB(250, 240, 130));
-        text_center(164, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
+        text_center(160, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
+        text_center(176, "NA PAREDE: SEGURE PARA ELA E APERTE X", 2, RGB(200, 200, 220));
         vignette();
     } else if (state == ST_INTRO) {
         draw_background(0);
@@ -1792,6 +2023,11 @@ static void draw(void)
         draw_player();
         draw_parts();
         vignette();
+        if (state == ST_PLAY && !wallTip && p.x > 212 * TS && p.x < 232 * TS) {      /* dica da parede */
+            panel(12, 56, 296, 40);
+            text_center(63, "SEGURE PARA A PAREDE E APERTE X", 2, RGB(250, 240, 130));
+            text_center(77, "PULE ENTRE AS PAREDES PARA SUBIR", 2, RGB(255, 255, 255));
+        }
         if (p.inv > 84) ui(0, 0, VW, VH, RGBA(255, 40, 40, 36));       /* piscada de dano */
         if (state == ST_CUT) {                                          /* barras de cinema */
             ui(0, 0, VW, 12, RGB(0, 0, 0)); ui(0, VH - 12, VW, 12, RGB(0, 0, 0));
