@@ -272,7 +272,7 @@ static void build_level(void)
     fill(22, 9, 4, 1, 1);
     fill(40, 10, 2, 2, 1);
     fill(46, 9, 2, 3, 1);
-    fill(52, 11, 3, 1, 2);                  /* espinhos */
+    fill(52, 11, 2, 1, 2);                  /* espinhos (2 tiles: pulo cobre ~4) */
     fill(62, 9, 3, 1, 1);
 
     fill(70, 11, 1, 1, 1);                  /* escada */
@@ -283,7 +283,7 @@ static void build_level(void)
 
     fill(100, 9, 3, 1, 1);
     fill(105, 7, 3, 1, 1);
-    fill(108, 11, 3, 1, 2);
+    fill(108, 11, 2, 1, 2);
     fill(112, 9, 1, 3, 1);
 }
 
