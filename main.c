@@ -2471,7 +2471,7 @@ static void draw(void)
     } else if (state == ST_WIN) {
         draw_background(cam);
         panel(40, 56, 240, 148);
-        { char t[24]; snprintf(t, sizeof(t), "FASE %d COMPLETA", curStage + 1); text_center(62, t, 3, RGB(120, 230, 255)); }
+        { char t[40]; snprintf(t, sizeof(t), "FASE %d COMPLETA", curStage + 1); text_center(62, t, 3, RGB(120, 230, 255)); }
         text_center(90, "SCORE", 2, RGB(255, 255, 255));
         { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(102, b, 3, RGB(250, 240, 130)); }
         { char pw[PW_LEN + 1]; current_pw(pw); text_center(128, "SENHA", 2, RGB(200, 200, 220)); text_center(140, pw, 3, RGB(250, 240, 130)); }
