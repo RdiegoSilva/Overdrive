@@ -28,6 +28,7 @@
 #define TS 16              /* tamanho do tile */
 #define MW 150             /* largura da fase em tiles */
 #define MH 14              /* altura da fase em tiles */
+#define GOAL_X (144 * TS)  /* porta de saida da Parte 1 */
 
 #define GRAV 0.28f
 #define MAXFALL 6.0f
@@ -43,7 +44,7 @@
 
 #define RGB(r, g, b) GS_SETREG_RGBAQ((r), (g), (b), 0x80, 0x00)
 
-enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN };
+enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO };
 enum { E_MET, E_BATTON, E_BOSS };
 
 /* ---------- tipos ---------- */
@@ -70,6 +71,7 @@ static int paused = 0, ready = 0, frame = 0, score = 0;
 static int bossActive = 0, bossDeath = 0, shake = 0;
 static float cam = 0, cpx = 3 * TS;
 static float bossX = 0, bossY = 0;
+static int introT = 0;
 
 /* spawns: tipo, coluna, linha (met/boss: linha do chao; batton: linha exata) */
 static const int spawns[][3] = {
@@ -77,7 +79,7 @@ static const int spawns[][3] = {
     {E_BATTON, 44, 4}, {E_MET, 49, 12}, {E_BATTON, 64, 5}, {E_MET, 66, 12},
     {E_MET, 76, 8},  {E_MET, 82, 12}, {E_BATTON, 90, 4}, {E_MET, 93, 12},
     {E_MET, 104, 12}, {E_BATTON, 110, 5}, {E_MET, 116, 12}, {E_BATTON, 118, 4},
-    {E_MET, 122, 12}, {E_BOSS, 141, 12},
+    {E_MET, 122, 12}, {E_MET, 128, 12}, {E_BATTON, 133, 4}, {E_MET, 137, 12},
 };
 #define NSPAWN ((int)(sizeof(spawns) / sizeof(spawns[0])))
 
@@ -283,7 +285,6 @@ static void build_level(void)
     fill(105, 7, 3, 1, 1);
     fill(108, 11, 3, 1, 2);
     fill(112, 9, 1, 3, 1);
-    fill(141, 9, 3, 1, 1);                  /* plataforma na arena do chefe */
 }
 
 static void spawn_enemies(void)
@@ -322,7 +323,7 @@ static void new_game(void)
 {
     p.lives = 3; score = 0; cpx = 3 * TS;
     respawn_player();
-    state = ST_PLAY; paused = 0;
+    state = ST_INTRO; introT = 150; paused = 0;
 }
 
 /* ---------- jogador ---------- */
@@ -410,10 +411,6 @@ static void update_player(unsigned pad, unsigned pressed)
     if (p.x > 118 * TS) cpx = 118 * TS;
     else if (p.x > 84 * TS) cpx = 84 * TS;
 
-    if (!bossActive && p.x > 131 * TS) {            /* fecha a porta do chefe */
-        bossActive = 1;
-        fill(129, 0, 1, 12, 1);
-    }
 }
 
 /* ---------- inimigos ---------- */
@@ -548,6 +545,10 @@ static void update_items(void)
 static void update(unsigned pad, unsigned pressed)
 {
     int i;
+    if (state == ST_INTRO) {
+        if (--introT <= 0 || (pressed & PAD_START)) state = ST_PLAY;
+        return;
+    }
     if (state == ST_TITLE || state == ST_OVER || state == ST_WIN) {
         if (pressed & PAD_START) new_game();
         return;
@@ -559,6 +560,10 @@ static void update(unsigned pad, unsigned pressed)
 
     update_player(pad, pressed);
     if (state != ST_PLAY) return;
+    if (ov(p.x, p.y, p.w, p.h, GOAL_X + 4, 9 * TS, 24, 48)) {      /* chegou na porta de saida */
+        state = ST_WIN;
+        return;
+    }
 
     for (i = 0; i < MAX_ENEMIES; i++) {
         Enemy *e = &en[i];
@@ -674,6 +679,22 @@ static void draw_tiles(void)
                 }
             }
         }
+}
+
+static void draw_goal(void)                                      /* porta de saida */
+{
+    float x = GOAL_X, y = 9 * TS;
+    int on = (frame / 20) % 2;
+    put(x - 2, y - 2, 36, 52, RGB(40, 44, 80));
+    put(x, y, 32, 48, RGB(20, 22, 44));
+    put(x + 2, y + 2, 13, 46, RGB(110, 120, 170));
+    put(x + 17, y + 2, 13, 46, RGB(110, 120, 170));
+    put(x + 2, y + 2, 2, 46, RGB(150, 160, 210));
+    put(x + 17, y + 2, 2, 46, RGB(150, 160, 210));
+    put(x + 12, y + 24, 2, 5, RGB(250, 240, 130));
+    put(x + 18, y + 24, 2, 5, RGB(250, 240, 130));
+    put(x + 4, y - 10, 24, 7, RGB(20, 90, 50));
+    put(x + 6, y - 9, 20, 5, on ? RGB(120, 255, 160) : RGB(50, 190, 100));
 }
 
 #define PM(lx, ly, rw, rh, c) mput(x, 12, p.dir, (lx), y + (ly), (rw), (rh), (c))
@@ -877,6 +898,12 @@ static void draw(void)
         text_center(90, "UMA AVENTURA PARA PS2", 2, RGB(255, 255, 255));
         if ((frame / 30) % 2) text_center(140, "APERTE START", 3, RGB(250, 240, 130));
         text_center(172, "X PULA  QUADRADO ATIRA", 2, RGB(200, 200, 220));
+    } else if (state == ST_INTRO) {
+        draw_background(0);
+        draw_floor_strip();
+        text_center(60, "PARTE 1", 6, RGB(250, 240, 130));
+        text_center(108, "A RUA", 3, RGB(255, 255, 255));
+        text_center(150, "CHEGUE ATE A PORTA DE SAIDA", 2, RGB(200, 200, 220));
     } else if (state == ST_OVER) {
         draw_background(cam);
         panel(40, 56, 240, 148);
@@ -887,13 +914,15 @@ static void draw(void)
     } else if (state == ST_WIN) {
         draw_background(cam);
         panel(40, 56, 240, 148);
-        text_center(70, "FASE COMPLETA", 4, RGB(120, 230, 255));
-        text_center(130, "SCORE", 2, RGB(255, 255, 255));
-        { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(148, b, 3, RGB(250, 240, 130)); }
+        text_center(68, "PARTE 1 COMPLETA", 3, RGB(120, 230, 255));
+        text_center(100, "SCORE", 2, RGB(255, 255, 255));
+        { char b[16]; snprintf(b, sizeof(b), "%d", score); text_center(116, b, 3, RGB(250, 240, 130)); }
+        text_center(152, "PARTE 2 EM BREVE", 2, RGB(120, 230, 255));
         if ((frame / 30) % 2) text_center(186, "START PARA JOGAR DE NOVO", 2, RGB(255, 255, 255));
     } else {
         draw_background(cam);
         draw_tiles();
+        draw_goal();
         draw_enemies();
         draw_bullets_items();
         draw_player();

@@ -21,13 +21,14 @@ make clean
 
 ## O que tem
 
-- Fase com rolagem lateral, buracos, espinhos, escada e plataformas
-- Inimigos: **Met** (fica invulnerável sob o capacete), **Batton** (voa em onda) e um **chefe** que pula e atira em leque
-- Barra de vida vertical, itens de cura, 3 vidas, checkpoints e porta do chefe
-- Tela de título, READY, pausa, game over e vitória
+- **Parte 1 ("A Rua")**: fase com rolagem lateral, buracos, espinhos, escada e plataformas, terminando numa porta de saída
+- Inimigos: **Met** (fica invulnerável sob o capacete) e **Batton** (voa em onda). O código do **chefe** (pula e atira em leque) já existe e está reservado para a Parte 2
+- Barra de vida vertical, itens de cura, 3 vidas e checkpoints
+- Tela de título, abertura da Parte 1, READY, pausa, game over e conclusão da Parte 1
 
 ## Ideias para evoluir
 
+- **Parte 2**: sequência de chefes (o chefe atual já está no código)
 - Escorregar (baixo + X) e subir escadas
 - Trocar armas ao derrotar o chefe (mecânica clássica)
 - Sprites com texturas (gsKit_prim_sprite_texture) e música via audsrv
