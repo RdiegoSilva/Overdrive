@@ -61,7 +61,7 @@ enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT };
 enum { E_TATU, E_BATTON, E_BOSS, E_MINI };
 
 /* ---------- tipos ---------- */
-typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf, wall, kick, kdir, wcoy, wdir, dash, dcool; } Player;
+typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf, wall, kick, kdir, wcoy, wdir, dash, dcool, tapdir, taptime; } Player;
 typedef struct { int active, own, dmg; float x, y, vx, vy; } Bullet;   /* own: 0 jogador, 1 inimigo */
 typedef struct { int active, type, hp, dir, t, st, w, h, flash, ground, a; float x, y, vx, vy, by; } Enemy;
 typedef struct { int active; float x, y, vy; } Item;
@@ -406,7 +406,7 @@ static void respawn_player(void)
     p.w = 12; p.h = 20; p.dir = 1; p.hp = MAXHP;
     p.inv = 0; p.stun = 0; p.ground = 0; p.charge = 0; p.coyote = 0; p.jbuf = 0;
     p.wall = p.kick = p.kdir = p.wcoy = p.wdir = 0;
-    p.dash = p.dcool = 0;
+    p.dash = p.dcool = p.tapdir = p.taptime = 0;
     memset(bl, 0, sizeof(bl));
     memset(it, 0, sizeof(it));
     memset(pt, 0, sizeof(pt));
@@ -467,15 +467,18 @@ static void update_player(unsigned pad, unsigned pressed)
 
     if (p.inv > 0) p.inv--;
     if (p.dcool > 0) p.dcool--;
+    if (p.taptime > 0) p.taptime--;
 
     if (p.stun > 0) {
         p.stun--; p.wall = 0; p.kick = 0; p.dash = 0;
     } else {
-        /* dash (Circulo): disponivel a qualquer momento, no chao ou no ar, depois de derrotar o Capitao Lobo */
-        if (hasDash && (pressed & PAD_CIRCLE) && p.dash == 0 && p.dcool == 0) {
-            if (pad & PAD_LEFT) p.dir = -1; else if (pad & PAD_RIGHT) p.dir = 1;
-            p.dash = DASHT; p.dcool = DASHCD; p.kick = 0; p.charge = 0;
-            burst(p.x + p.w / 2 - p.dir * 6, p.y + p.h / 2, 6, 140, 220, 255, 1.4f);
+        /* dash: aperte 2x rapido a direcao (qualquer momento, chao ou ar; pode estar segurando Quadrado) */
+        if (hasDash && (pressed & (PAD_LEFT | PAD_RIGHT))) {
+            int d = (pressed & PAD_LEFT) ? -1 : 1;
+            if (p.tapdir == d && p.taptime > 0 && p.dash == 0 && p.dcool == 0) {
+                p.dir = d; p.dash = DASHT; p.dcool = DASHCD; p.kick = 0; p.taptime = 0; p.tapdir = 0;
+                burst(p.x + p.w / 2 - p.dir * 6, p.y + p.h / 2, 6, 140, 220, 255, 1.4f);
+            } else { p.tapdir = d; p.taptime = 14; }
         }
         if (p.dash > 0) { p.dash--; p.vx = p.dir * DASHV; }
         else if (p.kick > 0) { p.kick--; p.vx = p.kdir * KICKV; p.dir = p.kdir; }   /* impulso do pulo na parede */
@@ -2052,7 +2055,7 @@ static void draw(void)
         if (state == ST_PLAY && dashMsg > 0 && (dashMsg > 30 || (frame / 3) % 2)) {   /* aviso do dash */
             panel(12, 56, 296, 40);
             text_center(63, "DASH CONQUISTADO!", 2, RGB(250, 240, 130));
-            text_center(77, "APERTE O CIRCULO PARA USAR", 2, RGB(255, 255, 255));
+            text_center(77, "APERTE 2X PARA FRENTE PARA USAR", 2, RGB(255, 255, 255));
         }
         if (p.inv > 84) ui(0, 0, VW, VH, RGBA(255, 40, 40, 36));       /* piscada de dano */
         if (state == ST_CUT) {                                          /* barras de cinema */

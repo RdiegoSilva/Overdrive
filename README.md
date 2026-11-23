@@ -16,7 +16,7 @@ make clean
 |---|---|
 | D-pad ← → | Andar |
 | X | Pular (segure = pulo mais alto) |
-| Círculo | Dash (só depois de derrotar o Capitão Lobo; permanente, pode usar a qualquer momento) |
+| → → ou ← ← (2x rápido) | Dash (só depois de derrotar o Capitão Lobo; permanente; funciona segurando Quadrado) |
 | Quadrado | Atirar (segure ~1 s e solte = tiro carregado, dano 3) |
 | Start | Começar / pausar |
 
