@@ -26,9 +26,11 @@
 #define VW 320
 #define VH 224
 #define TS 16              /* tamanho do tile */
-#define MW 150             /* largura da fase em tiles */
+#define MW 240             /* largura da fase em tiles */
 #define MH 14              /* altura da fase em tiles */
-#define GOAL_X (144 * TS)  /* porta de saida da Parte 1 */
+#define GOAL_X (226 * TS)  /* gatilho da cena final da Parte 1 */
+#define KING_X (MW * TS - 110)   /* posicao do chefao final na cena */
+#define KING_Y 136
 
 #define GRAV 0.28f
 #define MAXFALL 6.0f
@@ -44,7 +46,7 @@
 
 #define RGB(r, g, b) GS_SETREG_RGBAQ((r), (g), (b), 0x80, 0x00)
 
-enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO };
+enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT };
 enum { E_MET, E_BATTON, E_BOSS };
 
 /* ---------- tipos ---------- */
@@ -72,6 +74,8 @@ static int bossActive = 0, bossDeath = 0, shake = 0;
 static float cam = 0, cpx = 3 * TS;
 static float bossX = 0, bossY = 0;
 static int introT = 0;
+static int cutT = 0, cutLine = 0, cutPhase = 0;   /* cena final */
+static float cutBossY = 0;
 
 /* spawns: tipo, coluna, linha (met/boss: linha do chao; batton: linha exata) */
 static const int spawns[][3] = {
@@ -80,11 +84,15 @@ static const int spawns[][3] = {
     {E_MET, 76, 8},  {E_MET, 82, 12}, {E_BATTON, 90, 4}, {E_MET, 93, 12},
     {E_MET, 104, 12}, {E_BATTON, 110, 5}, {E_MET, 116, 12}, {E_BATTON, 118, 4},
     {E_MET, 122, 12}, {E_MET, 128, 12}, {E_BATTON, 133, 4}, {E_MET, 137, 12},
+    {E_MET, 144, 12}, {E_BATTON, 146, 5}, {E_MET, 153, 8}, {E_BATTON, 157, 4},
+    {E_MET, 166, 12}, {E_BATTON, 172, 5}, {E_MET, 181, 12}, {E_BATTON, 184, 4},
+    {E_MET, 189, 12}, {E_MET, 196, 12}, {E_BATTON, 199, 5}, {E_MET, 201, 12},
+    {E_BATTON, 206, 4}, {E_MET, 213, 12},
 };
 #define NSPAWN ((int)(sizeof(spawns) / sizeof(spawns[0])))
 
 /* fonte 3x5 (A-Z, 0-9) */
-static const unsigned char font[36][5] = {
+static const unsigned char font[42][5] = {
     {2,5,7,5,5},{6,5,6,5,6},{3,4,4,4,3},{6,5,5,5,6},{7,4,6,4,7},{7,4,6,4,4},
     {3,4,5,5,3},{5,5,7,5,5},{7,2,2,2,7},{1,1,1,5,2},{5,5,6,5,5},{4,4,4,4,7},
     {5,7,7,5,5},{6,5,5,5,5},{2,5,5,5,2},{6,5,6,4,4},{2,5,5,6,3},{6,5,6,5,5},
@@ -92,6 +100,7 @@ static const unsigned char font[36][5] = {
     {5,5,2,2,2},{7,1,2,4,7},
     {7,5,5,5,7},{2,6,2,2,7},{6,1,2,4,7},{6,1,2,1,6},{5,5,7,1,1},
     {7,4,6,1,6},{3,4,7,5,7},{7,1,2,2,2},{7,5,7,5,7},{7,5,7,1,6},
+    {0,0,0,0,2},{0,0,0,2,4},{2,2,2,0,2},{6,1,2,0,2},{0,0,7,0,0},{0,2,0,2,0},   /* . , ! ? - : */
 };
 
 /* ---------- utilidades de desenho ---------- */
@@ -125,6 +134,12 @@ static void text(float x, float y, const char *s, int sc, u64 c)
         if (ch >= 'a' && ch <= 'z') ch -= 32;
         if (ch >= 'A' && ch <= 'Z') i = ch - 'A';
         else if (ch >= '0' && ch <= '9') i = 26 + ch - '0';
+        else if (ch == '.') i = 36;
+        else if (ch == ',') i = 37;
+        else if (ch == '!') i = 38;
+        else if (ch == '?') i = 39;
+        else if (ch == '-') i = 40;
+        else if (ch == ':') i = 41;
         if (i < 0) continue;
         for (r = 0; r < 5; r++) {
             start = -1;
@@ -285,6 +300,30 @@ static void build_level(void)
     fill(105, 7, 3, 1, 1);
     fill(108, 11, 2, 1, 2);
     fill(112, 9, 1, 3, 1);
+
+    /* ---- parte estendida (tile 120 em diante) ---- */
+    fill(120, 10, 2, 2, 1);
+    fill(124, 12, 3, 2, 0);
+    fill(130, 11, 2, 1, 2);
+    fill(135, 9, 3, 1, 1);
+    fill(140, 12, 3, 2, 0);
+    fill(148, 11, 1, 1, 1);                 /* escada para a plataforma alta */
+    fill(149, 10, 1, 2, 1);
+    fill(150, 9, 1, 3, 1);
+    fill(151, 8, 6, 1, 1);
+    fill(159, 12, 3, 2, 0);
+    fill(164, 11, 2, 1, 2);
+    fill(169, 12, 9, 2, 0);                 /* poco largo com plataformas */
+    fill(170, 10, 2, 1, 1);
+    fill(173, 9, 2, 1, 1);
+    fill(176, 10, 2, 1, 1);
+    fill(187, 10, 2, 2, 1);
+    fill(192, 12, 3, 2, 0);
+    fill(198, 11, 2, 1, 2);
+    fill(203, 10, 3, 2, 1);
+    fill(209, 12, 3, 2, 0);
+    fill(215, 11, 2, 1, 2);
+    /* 220 em diante: arena plana da cena final */
 }
 
 static void spawn_enemies(void)
@@ -414,7 +453,10 @@ static void update_player(unsigned pad, unsigned pressed)
     if (hits(p.x + 2, p.y + 2, p.w - 4, p.h - 4, 2)) { p.hp = 0; kill_player(); return; }
     if (p.y > MH * TS + 20) { p.hp = 0; kill_player(); return; }
 
-    if (p.x > 118 * TS) cpx = 118 * TS;
+    if (p.x > 200 * TS) cpx = 200 * TS;
+    else if (p.x > 180 * TS) cpx = 180 * TS;
+    else if (p.x > 157 * TS) cpx = 157 * TS;
+    else if (p.x > 118 * TS) cpx = 118 * TS;
     else if (p.x > 84 * TS) cpx = 84 * TS;
 
 }
@@ -465,12 +507,17 @@ static void update_enemy(Enemy *e)
         if (e->y > MH * TS + 40) e->active = 0;
     } else if (e->type == E_BATTON) {
         if (e->st == 0) {
-            if (fabsf(px - ex) < 110) { e->st = 1; e->t = 0; }
+            if (fabsf(px - ex) < 120) { e->st = 1; e->t = 0; }
             return;
         }
-        e->x += (px < ex ? -1.0f : 1.0f);
-        e->y = e->by + sinf(e->t * 0.12f) * 22.0f;
-        if (e->t > 400) e->active = 0;
+        e->x += (px < ex ? -0.7f : 0.7f);                      /* mais lento */
+        {   /* desce ate a altura do jogador: antes voava la em cima, fora do alcance do tiro */
+            float target = p.y + 4;
+            if (e->by < target - 0.6f) e->by += 0.6f;
+            else if (e->by > target + 0.6f) e->by -= 0.6f;
+        }
+        e->y = e->by + sinf(e->t * 0.07f) * 8.0f;              /* onda menor e mais lenta */
+        if (e->t > 500) e->active = 0;
     } else if (!bossActive) {
         return;
     } else {                                     /* chefe */
@@ -547,6 +594,51 @@ static void update_items(void)
     }
 }
 
+/* ---------- cena final da Parte 1 ---------- */
+typedef struct { int who; const char *a, *b; } Line;      /* who: 0 Max, 1 Rei Leao, 2 Filha */
+static const Line story[] = {
+    {0, "FILHA! SOLTE ELA AGORA!", ""},
+    {1, "HA HA HA! EU SOU O REI LEAO.", "MEU EXERCITO DOMINA ESTE PLANETA."},
+    {1, "SUA FILHA VAI COMIGO. QUER ELA DE", "VOLTA? ENFRENTE MEUS GENERAIS."},
+    {2, "PAI! ME AJUDA!", ""},
+    {0, "EU VOU TE SALVAR! EU PROMETO!", ""},
+};
+#define NSTORY ((int)(sizeof(story) / sizeof(story[0])))
+
+static void start_cut(void)
+{
+    state = ST_CUT; cutPhase = 0; cutT = 0; cutLine = 0; cutBossY = -70;
+    p.dir = 1; p.charge = 0; p.vx = 0;
+    memset(en, 0, sizeof(en));
+    memset(bl, 0, sizeof(bl));
+}
+
+static void update_cut(unsigned pressed)
+{
+    p.charge = 0;
+    update_player(0, 0);                         /* sem controle: so a fisica */
+    if (state != ST_CUT) return;
+    update_parts();
+    cutT++;
+    if (cutPhase == 0) {                         /* o chefao cai do ceu */
+        cutBossY += 4.0f;
+        if (cutBossY >= KING_Y) {
+            cutBossY = KING_Y; cutPhase = 1; cutT = 0; shake = 24;
+            burst(KING_X + 18, KING_Y + 56, 14, 200, 200, 215, 2.0f);
+        }
+    } else if (cutPhase == 1) {                  /* dialogo (X avanca) */
+        if ((cutT > 25 && (pressed & PAD_CROSS)) || cutT > 300) {
+            cutLine++; cutT = 0;
+            if (cutLine >= NSTORY) cutPhase = 2;
+        }
+    } else {                                     /* foge levando a filha */
+        cutBossY -= 1.0f + cutT * 0.08f;
+        if (cutT % 6 == 0) burst(KING_X + 18, cutBossY + 56, 4, 255, 200, 120, 1.5f);
+        if (cutT < 30) shake = 6;
+        if (cutBossY < -80) state = ST_WIN;
+    }
+}
+
 /* ---------- loop de logica ---------- */
 static void update(unsigned pad, unsigned pressed)
 {
@@ -559,6 +651,7 @@ static void update(unsigned pad, unsigned pressed)
         if (pressed & PAD_START) new_game();
         return;
     }
+    if (state == ST_CUT) { update_cut(pressed); goto camera; }
     if (pressed & PAD_START) paused = !paused;
     if (paused) return;
     if (shake > 0) shake--;
@@ -566,10 +659,7 @@ static void update(unsigned pad, unsigned pressed)
 
     update_player(pad, pressed);
     if (state != ST_PLAY) return;
-    if (ov(p.x, p.y, p.w, p.h, GOAL_X + 4, 9 * TS, 24, 48)) {      /* chegou na porta de saida */
-        state = ST_WIN;
-        return;
-    }
+    if (p.x > GOAL_X) { start_cut(); return; }                      /* chegou na arena final */
 
     for (i = 0; i < MAX_ENEMIES; i++) {
         Enemy *e = &en[i];
@@ -578,7 +668,7 @@ static void update(unsigned pad, unsigned pressed)
         if (!e->active) continue;
         if (e->type == E_BOSS && !bossActive) continue;
         if (ov(p.x, p.y, p.w, p.h, e->x + 1, e->y + 1, e->w - 2, e->h - 2))
-            hurt_player(e->type == E_BOSS ? 4 : 3);
+            hurt_player(e->type == E_BOSS ? 4 : (e->type == E_BATTON ? 2 : 3));
         if (state != ST_PLAY) return;
     }
     update_bullets();
@@ -687,20 +777,57 @@ static void draw_tiles(void)
         }
 }
 
-static void draw_goal(void)                                      /* porta de saida */
+static void draw_king(float x, float y)                          /* Rei Leao, chefao final */
 {
-    float x = GOAL_X, y = 9 * TS;
-    int on = (frame / 20) % 2;
-    put(x - 2, y - 2, 36, 52, RGB(40, 44, 80));
-    put(x, y, 32, 48, RGB(20, 22, 44));
-    put(x + 2, y + 2, 13, 46, RGB(110, 120, 170));
-    put(x + 17, y + 2, 13, 46, RGB(110, 120, 170));
-    put(x + 2, y + 2, 2, 46, RGB(150, 160, 210));
-    put(x + 17, y + 2, 2, 46, RGB(150, 160, 210));
-    put(x + 12, y + 24, 2, 5, RGB(250, 240, 130));
-    put(x + 18, y + 24, 2, 5, RGB(250, 240, 130));
-    put(x + 4, y - 10, 24, 7, RGB(20, 90, 50));
-    put(x + 6, y - 9, 20, 5, on ? RGB(120, 255, 160) : RGB(50, 190, 100));
+    u64 line = RGB(30, 10, 10), armor = RGB(200, 150, 40), armor2 = RGB(150, 100, 20), hi = RGB(255, 225, 120);
+    u64 mane = RGB(210, 100, 20), mane2 = RGB(150, 60, 10), face = RGB(235, 180, 90), glow = RGB(120, 240, 255);
+    u64 cape = RGB(150, 20, 40), cape2 = RGB(110, 14, 30), dk = RGB(70, 40, 20);
+    u64 skin = RGB(245, 200, 160), hair = RGB(60, 36, 24), dress = RGB(255, 140, 190), red = RGB(220, 50, 60);
+    float gx = x - 16, gy = y + 20 + (((frame / 6) % 2) ? 1.0f : 0.0f);   /* a filha se debate */
+
+    put(x + 30, y + 16, 12, 38, cape); put(x + 36, y + 20, 6, 34, cape2);  /* capa */
+    put(x + 6, y + 42, 10, 12, armor2); put(x + 22, y + 42, 10, 12, armor2);  /* pernas */
+    put(x + 4, y + 52, 13, 4, line); put(x + 21, y + 52, 13, 4, line);
+    put(x + 2, y + 18, 34, 26, line);                                      /* tronco */
+    put(x + 3, y + 19, 32, 24, armor);
+    put(x + 5, y + 20, 12, 4, hi);
+    put(x + 3, y + 36, 32, 3, armor2);
+    put(x + 15, y + 26, 8, 8, line); put(x + 16, y + 27, 6, 6, glow);
+
+    put(gx + 1, gy, 10, 4, hair);                                          /* filha */
+    put(gx - 1, gy + 3, 2, 6, hair); put(gx + 10, gy + 3, 2, 6, hair);
+    put(gx + 2, gy + 3, 8, 7, skin);
+    put(gx + 4, gy + 6, 1, 2, line); put(gx + 7, gy + 6, 1, 2, line);
+    put(gx + 1, gy + 10, 10, 10, dress);
+    put(gx - 1, gy + 11, 2, 6, skin); put(gx + 11, gy + 11, 2, 6, skin);
+    put(gx + 3, gy + 20, 2, 6, skin); put(gx + 7, gy + 20, 2, 6, skin);
+    put(gx + 3, gy + 26, 3, 2, red); put(gx + 7, gy + 26, 3, 2, red);
+    put(x - 8, y + 28, 12, 7, line); put(x - 7, y + 29, 10, 5, armor);     /* braco que a segura */
+
+    put(x, y - 2, 38, 22, mane2); put(x + 2, y, 34, 18, mane);             /* juba e cabeca */
+    put(x + 3, y - 3, 6, 6, mane2); put(x + 29, y - 3, 6, 6, mane2);
+    put(x + 8, y + 2, 22, 16, face);
+    put(x + 8, y + 9, 10, 8, RGB(250, 215, 150));
+    put(x + 9, y + 10, 4, 3, dk);
+    put(x + 14, y + 5, 5, 3, glow); put(x + 24, y + 5, 5, 3, glow);
+    put(x + 10, y + 15, 8, 1, line);
+    put(x + 8, y - 7, 22, 5, hi);                                          /* coroa */
+    put(x + 8, y - 10, 3, 3, hi); put(x + 17, y - 11, 3, 4, hi); put(x + 27, y - 10, 3, 3, hi);
+}
+
+static void draw_subtitle(void)
+{
+    const Line *l;
+    static const char *const names[3] = { "MAX", "REI LEAO", "FILHA" };
+    u64 col[3];
+    col[0] = RGB(120, 230, 255); col[1] = RGB(255, 110, 110); col[2] = RGB(255, 150, 200);
+    if (cutPhase != 1 || cutLine >= NSTORY) return;
+    l = &story[cutLine];
+    panel(20, 34, 280, 52);
+    text_s(28, 39, names[l->who], 2, col[l->who]);
+    text(28, 54, l->a, 2, RGB(255, 255, 255));
+    text(28, 68, l->b, 2, RGB(255, 255, 255));
+    if ((frame / 20) % 2) text(284, 74, "X", 2, RGB(250, 240, 130));
 }
 
 #define PM(lx, ly, rw, rh, c) mput(x, 12, p.dir, (lx), y + (ly), (rw), (rh), (c))
@@ -928,12 +1055,12 @@ static void draw(void)
     } else {
         draw_background(cam);
         draw_tiles();
-        draw_goal();
         draw_enemies();
         draw_bullets_items();
+        if (state == ST_CUT) draw_king(KING_X, cutBossY);
         draw_player();
         draw_parts();
-        draw_hud();
+        if (state == ST_CUT) draw_subtitle(); else draw_hud();
         if (ready > 0 && (frame / 8) % 2) text_center(100, "READY", 4, RGB(255, 255, 255));
         if (paused) {
             panel(110, 90, 100, 36);
