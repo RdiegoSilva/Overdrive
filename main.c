@@ -39,6 +39,9 @@
 #define MAXHP 28
 #define SLIDE 1.0f          /* velocidade de queda deslizando na parede */
 #define WALLJUMP 5.4f       /* forca do pulo na parede */
+#define DASHV 4.2f          /* velocidade do dash */
+#define DASHT 12            /* duracao do dash (quadros) */
+#define DASHCD 28           /* recarga entre dashes (quadros) */
 #define KICKV 2.0f          /* impulso horizontal do pulo na parede */
 #define GATE_L 261          /* portoes da arena do mini-chefe */
 #define GATE_R 280
@@ -55,10 +58,10 @@
 #define RGBA(r, g, b, a) GS_SETREG_RGBAQ((r), (g), (b), (a), 0x00)   /* a: 0..128 (128 = opaco) */
 
 enum { ST_TITLE, ST_PLAY, ST_OVER, ST_WIN, ST_INTRO, ST_CUT };
-enum { E_MET, E_BATTON, E_BOSS, E_MINI };
+enum { E_TATU, E_BATTON, E_BOSS, E_MINI };
 
 /* ---------- tipos ---------- */
-typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf, wall, kick, kdir, wcoy, wdir; } Player;
+typedef struct { float x, y, vx, vy; int w, h, dir, hp, inv, stun, ground, charge, lives, coyote, jbuf, wall, kick, kdir, wcoy, wdir, dash, dcool; } Player;
 typedef struct { int active, own, dmg; float x, y, vx, vy; } Bullet;   /* own: 0 jogador, 1 inimigo */
 typedef struct { int active, type, hp, dir, t, st, w, h, flash, ground, a; float x, y, vx, vy, by; } Enemy;
 typedef struct { int active; float x, y, vy; } Item;
@@ -79,6 +82,7 @@ static Part pt[MAX_PARTS];
 static int state = ST_TITLE;
 static int paused = 0, ready = 0, frame = 0, score = 0;
 static int bossActive = 0, bossDeath = 0, shake = 0;
+static int hasDash = 0, dashMsg = 0;        /* dash: ganho ao derrotar o Capitao Lobo, permanente */
 static int miniState = 0, wallTip = 0;      /* mini-chefe: 0 nao comecou, 1 lutando, 2 derrotado */
 static float miniCam = 0;
 static float cam = 0, cpx = 3 * TS;
@@ -87,19 +91,19 @@ static int introT = 0;
 static int cutT = 0, cutLine = 0, cutPhase = 0;   /* cena final */
 static float cutBossY = 0;
 
-/* spawns: tipo, coluna, linha (met/boss: linha do chao; batton: linha exata) */
+/* spawns: tipo, coluna, linha (tatu/boss: linha do chao; batton: linha exata) */
 static const int spawns[][3] = {
-    {E_MET, 18, 12}, {E_MET, 23, 9},  {E_BATTON, 26, 5}, {E_MET, 36, 12},
-    {E_BATTON, 44, 4}, {E_MET, 49, 12}, {E_BATTON, 64, 5}, {E_MET, 66, 12},
-    {E_MET, 76, 8},  {E_MET, 82, 12}, {E_BATTON, 90, 4}, {E_MET, 93, 12},
-    {E_MET, 104, 12}, {E_BATTON, 110, 5}, {E_MET, 116, 12}, {E_BATTON, 118, 4},
-    {E_MET, 122, 12}, {E_MET, 128, 12}, {E_BATTON, 133, 4}, {E_MET, 137, 12},
-    {E_MET, 144, 12}, {E_BATTON, 146, 5}, {E_MET, 153, 8}, {E_BATTON, 157, 4},
-    {E_MET, 166, 12}, {E_BATTON, 172, 5}, {E_MET, 181, 12}, {E_BATTON, 184, 4},
-    {E_MET, 189, 12}, {E_MET, 196, 12}, {E_BATTON, 199, 5}, {E_MET, 201, 12},
-    {E_BATTON, 206, 4}, {E_MET, 213, 12},
-    {E_MET, 222, 12}, {E_MET, 236, 12}, {E_BATTON, 239, 4}, {E_MET, 243, 12},
-    {E_MET, 284, 12}, {E_BATTON, 288, 4}, {E_MET, 290, 12},
+    {E_TATU, 18, 12}, {E_TATU, 23, 9},  {E_BATTON, 26, 5}, {E_TATU, 36, 12},
+    {E_BATTON, 44, 4}, {E_TATU, 49, 12}, {E_BATTON, 64, 5}, {E_TATU, 66, 12},
+    {E_TATU, 76, 8},  {E_TATU, 82, 12}, {E_BATTON, 90, 4}, {E_TATU, 93, 12},
+    {E_TATU, 104, 12}, {E_BATTON, 110, 5}, {E_TATU, 116, 12}, {E_BATTON, 118, 4},
+    {E_TATU, 122, 12}, {E_TATU, 128, 12}, {E_BATTON, 133, 4}, {E_TATU, 137, 12},
+    {E_TATU, 144, 12}, {E_BATTON, 146, 5}, {E_TATU, 153, 8}, {E_BATTON, 157, 4},
+    {E_TATU, 166, 12}, {E_BATTON, 172, 5}, {E_TATU, 181, 12}, {E_BATTON, 184, 4},
+    {E_TATU, 189, 12}, {E_TATU, 196, 12}, {E_BATTON, 199, 5}, {E_TATU, 201, 12},
+    {E_BATTON, 206, 4}, {E_TATU, 213, 12},
+    {E_TATU, 222, 12}, {E_TATU, 236, 12}, {E_BATTON, 239, 4}, {E_TATU, 243, 12},
+    {E_TATU, 284, 12}, {E_BATTON, 288, 4}, {E_TATU, 290, 12},
 };
 #define NSPAWN ((int)(sizeof(spawns) / sizeof(spawns[0])))
 
@@ -389,7 +393,7 @@ static void spawn_enemies(void)
         e->x = spawns[i][1] * TS;
         e->dir = -1;
         switch (e->type) {
-        case E_MET:    e->w = 14; e->h = 14; e->hp = 1;  e->y = spawns[i][2] * TS - e->h; break;
+        case E_TATU:    e->w = 14; e->h = 14; e->hp = 1;  e->y = spawns[i][2] * TS - e->h; break;
         case E_BATTON: e->w = 14; e->h = 10; e->hp = 1;  e->y = spawns[i][2] * TS; e->by = e->y; break;
         case E_BOSS:   e->w = 24; e->h = 28; e->hp = 28; e->y = spawns[i][2] * TS - e->h; break;
         }
@@ -402,6 +406,7 @@ static void respawn_player(void)
     p.w = 12; p.h = 20; p.dir = 1; p.hp = MAXHP;
     p.inv = 0; p.stun = 0; p.ground = 0; p.charge = 0; p.coyote = 0; p.jbuf = 0;
     p.wall = p.kick = p.kdir = p.wcoy = p.wdir = 0;
+    p.dash = p.dcool = 0;
     memset(bl, 0, sizeof(bl));
     memset(it, 0, sizeof(it));
     memset(pt, 0, sizeof(pt));
@@ -413,7 +418,7 @@ static void respawn_player(void)
 
 static void new_game(void)
 {
-    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0;
+    p.lives = 3; score = 0; cpx = 3 * TS; wallTip = 0; hasDash = 0; dashMsg = 0;
     respawn_player();
     state = ST_INTRO; introT = 150; paused = 0;
 }
@@ -461,18 +466,26 @@ static void update_player(unsigned pad, unsigned pressed)
     float fall;
 
     if (p.inv > 0) p.inv--;
+    if (p.dcool > 0) p.dcool--;
 
     if (p.stun > 0) {
-        p.stun--; p.wall = 0; p.kick = 0;
+        p.stun--; p.wall = 0; p.kick = 0; p.dash = 0;
     } else {
-        if (p.kick > 0) { p.kick--; p.vx = p.kdir * KICKV; p.dir = p.kdir; }   /* impulso do pulo na parede */
+        /* dash (Circulo): disponivel a qualquer momento, no chao ou no ar, depois de derrotar o Capitao Lobo */
+        if (hasDash && (pressed & PAD_CIRCLE) && p.dash == 0 && p.dcool == 0) {
+            if (pad & PAD_LEFT) p.dir = -1; else if (pad & PAD_RIGHT) p.dir = 1;
+            p.dash = DASHT; p.dcool = DASHCD; p.kick = 0; p.charge = 0;
+            burst(p.x + p.w / 2 - p.dir * 6, p.y + p.h / 2, 6, 140, 220, 255, 1.4f);
+        }
+        if (p.dash > 0) { p.dash--; p.vx = p.dir * DASHV; }
+        else if (p.kick > 0) { p.kick--; p.vx = p.kdir * KICKV; p.dir = p.kdir; }   /* impulso do pulo na parede */
         else if (pad & PAD_LEFT) { p.vx = -RUN; p.dir = -1; }
         else if (pad & PAD_RIGHT) { p.vx = RUN; p.dir = 1; }
         else p.vx = 0;
 
         /* parede: no ar, encostado e segurando na direcao dela */
         p.wall = 0;
-        if (!p.ground && p.kick == 0) {
+        if (!p.ground && p.kick == 0 && p.dash == 0) {
             if ((pad & PAD_LEFT) && hits(p.x - 1, p.y, p.w, p.h, 1)) p.wall = -1;
             else if ((pad & PAD_RIGHT) && hits(p.x + 1, p.y, p.w, p.h, 1)) p.wall = 1;
         }
@@ -507,7 +520,8 @@ static void update_player(unsigned pad, unsigned pressed)
         }
     }
 
-    p.vy += GRAV;
+    if (p.dash > 0 && p.vy >= 0) p.vy = 0;                            /* dash: sem gravidade (pular ainda funciona) */
+    else p.vy += GRAV;
     if (p.vy > MAXFALL) p.vy = MAXFALL;
     if (p.wall && p.vy > SLIDE) p.vy = SLIDE;                         /* desliza devagar na parede */
     if (p.wall && p.vy > 0 && (frame % 5) == 0)
@@ -547,6 +561,7 @@ static void kill_enemy(Enemy *e)
     if (e->type == E_MINI) {                                          /* Capitao Lobo derrotado */
         int ty, k;
         score += 1500; shake = 30; miniState = 2;
+        if (!hasDash) { hasDash = 1; dashMsg = 260; }                 /* ganha o dash para sempre */
         burst(e->x + e->w / 2, e->y + e->h / 2, 30, 255, 200, 80, 3.0f);
         burst(e->x + e->w / 2, e->y + e->h / 2, 16, 140, 190, 255, 2.0f);
         memset(bl, 0, sizeof(bl));
@@ -566,7 +581,7 @@ static void kill_enemy(Enemy *e)
         return;
     }
     burst(e->x + e->w / 2, e->y + e->h / 2, 12, 255, 170, 60, 2.0f);
-    score += (e->type == E_MET) ? 100 : 150;
+    score += (e->type == E_TATU) ? 100 : 150;
     if (rand() % 4 == 0) {
         int i;
         for (i = 0; i < MAX_ITEMS; i++)
@@ -580,16 +595,16 @@ static void update_enemy(Enemy *e)
     if (e->flash > 0) e->flash--;
     e->t++;
 
-    if (e->type == E_MET) {
+    if (e->type == E_TATU) {
         if (fabsf(px - ex) > 240) return;
         if (e->st == 0) {                        /* anda */
             e->dir = (px < ex) ? -1 : 1;
             e->vx = 0.5f * e->dir;
             if (e->t > 100) { e->st = 1; e->t = 0; e->vx = 0; }
-        } else if (e->st == 1) {                 /* escondido (invulneravel) */
+        } else if (e->st == 1) {                 /* enrolado na bola (invulneravel) */
             e->vx = 0;
             if (e->t > 50) { e->st = 2; e->t = 0; }
-        } else {                                 /* aparece e atira */
+        } else {                                 /* desenrola e atira */
             e->vx = 0;
             if (e->t == 12) fire(1, 2, ex, e->y + 4, (px < ex ? -1.8f : 1.8f), 0);
             if (e->t > 45) { e->st = 0; e->t = 0; }
@@ -693,7 +708,7 @@ static void update_bullets(void)
                 if (e->type == E_MINI && e->st == 5) continue;
                 if (!ov(b->x - 3, b->y - 3, 6, 6, e->x, e->y, e->w, e->h)) continue;
                 b->active = 0;
-                if (e->type == E_MET && e->st == 1) {           /* capacete: sem dano */
+                if (e->type == E_TATU && e->st == 1) {           /* tatu bola: sem dano */
                     burst(b->x, b->y, 3, 180, 180, 200, 1.0f);
                     break;
                 }
@@ -807,6 +822,7 @@ static void update(unsigned pad, unsigned pressed)
     if (shake > 0) shake--;
     if (ready > 0) { ready--; goto camera; }
 
+    if (dashMsg > 0) dashMsg--;
     update_player(pad, pressed);
     if (state != ST_PLAY) return;
     if (p.x > GOAL_X) { start_cut(); return; }                      /* chegou na arena final */
@@ -1306,65 +1322,65 @@ static const char *const spr_max_jump_r[26] = {
 };
 static const Spr spr_max_jump = { 20, 26, spr_max_jump_r };
 
-static const char *const spr_met_walk0_r[16] = {
-    "....KKKKKKKK....",
-    "...KaeeeaaaabK..",
-    "..KaeeaaaaaaabK.",
-    ".KaeeaaaaaaaaabK",
-    "KaeaaaaaaaaaaabK",
-    "KaaaaaaaaaaaabbK",
-    "KabbbbbbbbbbbbdK",
-    "KddddddddddddddK",
-    ".KffffffffffffK.",
-    ".KfWWffffffWWfK.",
-    ".KfWEffffffWEfK.",
-    ".KffffffffffffK.",
-    "...KKKKKKKKKK...",
-    "..KbbbK..KbbbK..",
-    "..KKKKK..KKKKK..",
+static const char *const spr_tatu_walk0_r[16] = {
+    "................",
+    "................",
+    "................",
+    "................",
+    "....KKKKKKK.....",
+    "..KKZZVVZZVKK...",
+    ".KZVVmVVmVVVmK..",
+    "KZVVmVVmVVVmVK..",
+    "KVVmVVmVVVmVVVK.",
+    "KDDDDDDDDDDDKSSK",
+    ".KsssssssssKSESK",
+    ".KsssssssssKSSSK",
+    "..KKKKKKKKKKKMKK",
+    "..KVVK..KVVK....",
+    "..KKKK..KKKK....",
     "................",
 };
-static const Spr spr_met_walk0 = { 16, 16, spr_met_walk0_r };
+static const Spr spr_tatu_walk0 = { 16, 16, spr_tatu_walk0_r };
 
-static const char *const spr_met_walk1_r[16] = {
-    "....KKKKKKKK....",
-    "...KaeeeaaaabK..",
-    "..KaeeaaaaaaabK.",
-    ".KaeeaaaaaaaaabK",
-    "KaeaaaaaaaaaaabK",
-    "KaaaaaaaaaaaabbK",
-    "KabbbbbbbbbbbbdK",
-    "KddddddddddddddK",
-    ".KffffffffffffK.",
-    ".KfWWffffffWWfK.",
-    ".KfWEffffffWEfK.",
-    ".KffffffffffffK.",
-    "...KKKKKKKKKK...",
-    "...KbbbK.KbbbK..",
-    "...KKKKK.KKKKK..",
+static const char *const spr_tatu_walk1_r[16] = {
+    "................",
+    "................",
+    "................",
+    "................",
+    "....KKKKKKK.....",
+    "..KKZZVVZZVKK...",
+    ".KZVVmVVmVVVmK..",
+    "KZVVmVVmVVVmVK..",
+    "KVVmVVmVVVmVVVK.",
+    "KDDDDDDDDDDDKSSK",
+    ".KsssssssssKSESK",
+    ".KsssssssssKSSSK",
+    "..KKKKKKKKKKKMKK",
+    ".KVVK...KVVK....",
+    ".KKKK...KKKK....",
     "................",
 };
-static const Spr spr_met_walk1 = { 16, 16, spr_met_walk1_r };
+static const Spr spr_tatu_walk1 = { 16, 16, spr_tatu_walk1_r };
 
-static const char *const spr_met_hide_r[16] = {
+static const char *const spr_tatu_hide_r[16] = {
     "................",
     "................",
     "................",
     "................",
-    "................",
-    "................",
-    "................",
+    ".....KKKKKK.....",
+    "...KKZZVVVVKK...",
+    "..KZZVVmVVVmVK..",
+    ".KZVVVmVVVVmVVK.",
+    ".KVVDDDDDDDDVVK.",
+    "KVVmVVVmVVVmVVVK",
+    "KVVmVVVmVVVmVVVK",
+    "KDDDDDDDDDDDDDDK",
+    ".KVVmVVVmVVVmVK.",
+    ".KVVVVmVVVVmVVK.",
+    "..KKVVVVVVVVKK..",
     "....KKKKKKKK....",
-    "...KaeeeaaaabK..",
-    "..KaeeaaaaaaabK.",
-    ".KaeeaaaaaaaaabK",
-    "KaeaaaaaaaaaaabK",
-    "KaaaaaaaaaaaabbK",
-    "KabbbbbbbbbbbbdK",
-    "KddddddddddddddK",
-    ".KKKKKKKKKKKKKK.",
 };
-static const Spr spr_met_hide = { 16, 16, spr_met_hide_r };
+static const Spr spr_tatu_hide = { 16, 16, spr_tatu_hide_r };
 
 static const char *const spr_bat_up_r[10] = {
     "KK..............KK",
@@ -1806,6 +1822,11 @@ static void draw_player(void)
     if (p.charge >= CHARGE_FRAMES && (frame / 3) % 2) mode = 1;
     else if (p.charge > 20 && (frame / 6) % 2) mode = 2;
 
+    if (p.dash > 0) {                                           /* rastro do dash */
+        int k;
+        for (k = 1; k <= 3; k++)
+            put(p.x + (p.dir > 0 ? -k * 7.0f : p.w + k * 7.0f - 5), p.y + 3, 5, p.h - 6, RGBA(120, 210, 255, 110 - k * 28));
+    }
     spr(sp, x, y, p.dir < 0, mode);
 
     if (p.charge > 20) {                                        /* energia na luva */
@@ -1832,9 +1853,9 @@ static void draw_enemies(void)
         if (!e->active) continue;
         shadow(x + e->w / 2.0f, y + e->h, e->w + 2);
 
-        if (e->type == E_MET) {
-            const Spr *ms = (e->st == 1) ? &spr_met_hide
-                          : ((e->st == 0 && (frame / 8) % 2) ? &spr_met_walk1 : &spr_met_walk0);
+        if (e->type == E_TATU) {
+            const Spr *ms = (e->st == 1) ? &spr_tatu_hide
+                          : ((e->st == 0 && (frame / 8) % 2) ? &spr_tatu_walk1 : &spr_tatu_walk0);
             spr(ms, x + e->w / 2.0f - 8, y + e->h - 16, d < 0, f ? 3 : 0);
         } else if (e->type == E_BATTON) {
             spr(((frame / 6) % 2) ? &spr_bat_up : &spr_bat_down, x + e->w / 2.0f - 9, y, 0, f ? 3 : 0);
@@ -2027,6 +2048,11 @@ static void draw(void)
             panel(12, 56, 296, 40);
             text_center(63, "SEGURE PARA A PAREDE E APERTE X", 2, RGB(250, 240, 130));
             text_center(77, "PULE ENTRE AS PAREDES PARA SUBIR", 2, RGB(255, 255, 255));
+        }
+        if (state == ST_PLAY && dashMsg > 0 && (dashMsg > 30 || (frame / 3) % 2)) {   /* aviso do dash */
+            panel(12, 56, 296, 40);
+            text_center(63, "DASH CONQUISTADO!", 2, RGB(250, 240, 130));
+            text_center(77, "APERTE O CIRCULO PARA USAR", 2, RGB(255, 255, 255));
         }
         if (p.inv > 84) ui(0, 0, VW, VH, RGBA(255, 40, 40, 36));       /* piscada de dano */
         if (state == ST_CUT) {                                          /* barras de cinema */

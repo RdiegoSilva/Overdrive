@@ -16,13 +16,14 @@ make clean
 |---|---|
 | D-pad ← → | Andar |
 | X | Pular (segure = pulo mais alto) |
+| Círculo | Dash (só depois de derrotar o Capitão Lobo; permanente, pode usar a qualquer momento) |
 | Quadrado | Atirar (segure ~1 s e solte = tiro carregado, dano 3) |
 | Start | Começar / pausar |
 
 ## O que tem
 
 - **Parte 1 ("A Rua")**: fase com rolagem lateral, buracos, espinhos, escada e plataformas, terminando numa porta de saída
-- Inimigos: **Met** (fica invulnerável sob o capacete) e **Batton** (voa em onda). O código do **chefe** (pula e atira em leque) já existe e está reservado para a Parte 2
+- Inimigos: **Tatu bola** (enrola na bola e fica invulnerável) e **Batton** (voa em onda). O código do **chefe** (pula e atira em leque) já existe e está reservado para a Parte 2
 - Barra de vida vertical, itens de cura, 3 vidas e checkpoints
 - Tela de título, abertura da Parte 1, READY, pausa, game over e conclusão da Parte 1
 
